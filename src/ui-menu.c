@@ -239,6 +239,8 @@ show_about (TboWindow *tbo)
 {
     const gchar *authors[] = {"danigm <dani@danigm.net>", NULL};
     const gchar *artists[] = {"danigm <dani@danigm.net>",
+	    		      "",
+                              "Actualizado por Jaime, 2026, https://github.com/j4imefoo/TBO",
                               "",
                               "Arcadia http://www.arcadiaproject.org :",
                               "Samuel Navas Portillo",
@@ -253,8 +255,6 @@ show_about (TboWindow *tbo)
                               "",
                               "Facilware:",
                               "VIcente Pons <simpons@gmail.com>",
-                              "",
-                              "Actualizado por Jaime 2026 - https://github.com/j4imefoo/TBO",
                               NULL};
 
     gtk_show_about_dialog (GTK_WINDOW (tbo->window),
