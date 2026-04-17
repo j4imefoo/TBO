@@ -237,11 +237,13 @@ open_tutorial (TboWindow *tbo)
 static void
 show_about (TboWindow *tbo)
 {
-    const gchar *authors[] = {"danigm <dani@danigm.net>", NULL};
+    const gchar *authors[] = {
+        "danigm <dani@danigm.net>",
+        "Actualizado por Jaime, 2026, https://github.com/j4imefoo/TBO",
+        NULL
+    };
     const gchar *artists[] = {"danigm <dani@danigm.net>",
-	    		      "",
-                              "Actualizado por Jaime, 2026, https://github.com/j4imefoo/TBO",
-                              "",
+			      "",
                               "Arcadia http://www.arcadiaproject.org :",
                               "Samuel Navas Portillo",
                               "Daniel Pavón Pérez",
