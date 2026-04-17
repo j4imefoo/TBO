@@ -50,7 +50,7 @@ msgstr "altura: "
 
 #: ../src/comic-open-dialog.c:65
 msgid "Open"
-msgstr "Abrir"
+msgstr "Abrir cómic"
 
 #: ../src/comic-open-dialog.c:82
 msgid "TBO files"
@@ -63,6 +63,55 @@ msgstr "Todos los archivos"
 #: ../src/comic-saveas-dialog.c:45
 msgid "Save as"
 msgstr "Guardar como"
+
+#: ../src/tbo-toolbar.c:248
+msgid "New comic"
+msgstr "Cómic nuevo"
+
+#: ../src/tbo-toolbar.c:250
+msgid "Save comic as"
+msgstr "Guardar como"
+
+#: ../src/tbo-toolbar.c:260
+msgid "Undo"
+msgstr "Deshacer"
+
+#: ../src/tbo-toolbar.c:261
+msgid "Redo"
+msgstr "Rehacer"
+
+#: ../src/tbo-toolbar.c:270
+msgid "Delete page"
+msgstr "Eliminar página"
+
+#: ../src/tbo-toolbar.c:271
+msgid "Previous page"
+msgstr "Página anterior"
+
+#: ../src/tbo-toolbar.c:287
+msgid "New frame"
+msgstr "Nueva viñeta"
+
+#: ../src/ui-menu.c:321
+msgid "New"
+msgstr "Cómic nuevo"
+
+#: ../src/ui-menu.c:323
+msgid "Save"
+msgstr "Guardar"
+
+#: ../src/ui-menu.c:324
+msgid "Save As"
+msgstr "Guardar como"
+
+#: ../src/ui-menu.c:325
+msgid "Export"
+msgstr "Exportar"
+
+#: ../src/tbo-window.c:74
+#, c-format
+msgid "Page %d"
+msgstr "Página %d"
 
 #: ../src/custom-stock.c:57
 #, c-format
