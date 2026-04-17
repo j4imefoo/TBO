@@ -7,5 +7,5 @@ Exec=tbo %f
 Icon=tbo
 Terminal=false
 StartupNotify=false
-StartupWMClass=net.danigm.tbo
+StartupWMClass=tbo
 Categories=Graphics;VectorGraphics;GTK;
