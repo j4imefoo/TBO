@@ -18,7 +18,7 @@ pkgver() {
 }
 
 build() {
-  arch-meson TBO build -Dprefix=/usr
+  arch-meson TBO build
   meson compile -C build
 }
 
