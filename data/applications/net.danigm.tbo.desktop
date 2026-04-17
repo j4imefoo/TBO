@@ -6,6 +6,6 @@ Comment=Create comic strips and illustrated presentations
 Exec=tbo %f
 Icon=tbo
 Terminal=false
-StartupNotify=true
+StartupNotify=false
 StartupWMClass=net.danigm.tbo
 Categories=Graphics;VectorGraphics;GTK;
