@@ -42,6 +42,13 @@ static void
 select_inserted_asset (TboWindow *tbo, Frame *frame, TboObjectBase *asset)
 {
     TboToolSelector *selector;
+    TboToolBase *current_tool = tbo->toolbar->selected_tool;
+
+    if (current_tool == tbo->toolbar->tools[TBO_TOOLBAR_DOODLE] ||
+        current_tool == tbo->toolbar->tools[TBO_TOOLBAR_BUBBLE])
+    {
+        return;
+    }
 
     tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_SELECTOR);
     selector = TBO_TOOL_SELECTOR (tbo->toolbar->tools[TBO_TOOLBAR_SELECTOR]);

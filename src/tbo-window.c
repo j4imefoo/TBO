@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <gtk/gtk.h>
 #include <glib/gi18n.h>
+#include <glib/gstdio.h>
 #include "tbo-types.h"
 #include "tbo-window.h"
 #include "comic.h"
@@ -118,6 +119,51 @@ set_window_path (gchar **slot, const gchar *path)
 {
     g_free (*slot);
     *slot = path != NULL ? g_strdup (path) : NULL;
+}
+
+static gchar *
+get_state_file_path (void)
+{
+    gchar *dir = g_build_filename (g_get_user_config_dir (), "tbo", NULL);
+    gchar *path;
+
+    g_mkdir_with_parents (dir, 0755);
+    path = g_build_filename (dir, "state.ini", NULL);
+    g_free (dir);
+    return path;
+}
+
+static gchar *
+load_persisted_path (const gchar *key)
+{
+    GKeyFile *kf = g_key_file_new ();
+    gchar *state_file = get_state_file_path ();
+    gchar *value = NULL;
+
+    if (g_key_file_load_from_file (kf, state_file, G_KEY_FILE_NONE, NULL))
+        value = g_key_file_get_string (kf, "paths", key, NULL);
+
+    g_key_file_unref (kf);
+    g_free (state_file);
+    return value;
+}
+
+static void
+store_persisted_path (const gchar *key, const gchar *value)
+{
+    GKeyFile *kf = g_key_file_new ();
+    gchar *state_file = get_state_file_path ();
+    gchar *content;
+    gsize len;
+
+    g_key_file_load_from_file (kf, state_file, G_KEY_FILE_NONE, NULL);
+    g_key_file_set_string (kf, "paths", key, value);
+    content = g_key_file_to_data (kf, &len, NULL);
+    g_file_set_contents (state_file, content, len, NULL);
+
+    g_free (content);
+    g_key_file_unref (kf);
+    g_free (state_file);
 }
 
 static gchar *
@@ -355,17 +401,24 @@ void
 tbo_window_set_browse_path (TboWindow *tbo, const gchar *path)
 {
     set_window_path (&tbo->browse_path, path);
+    if (path != NULL)
+        store_persisted_path ("browse_path", path);
 }
 
 void
 tbo_window_set_export_path (TboWindow *tbo, const gchar *path)
 {
     set_window_path (&tbo->export_path, path);
+    if (path != NULL)
+        store_persisted_path ("export_path", path);
 }
 
 gchar *
 tbo_window_get_open_dir (TboWindow *tbo)
 {
+    if (tbo->browse_path == NULL)
+        tbo->browse_path = load_persisted_path ("browse_path");
+
     if (tbo->browse_path != NULL)
         return get_dirname_or_home (tbo->browse_path);
 
@@ -375,6 +428,9 @@ tbo_window_get_open_dir (TboWindow *tbo)
 gchar *
 tbo_window_get_export_dir (TboWindow *tbo)
 {
+    if (tbo->export_path == NULL)
+        tbo->export_path = load_persisted_path ("export_path");
+
     if (tbo->export_path != NULL)
         return g_path_get_dirname (tbo->export_path);
 
