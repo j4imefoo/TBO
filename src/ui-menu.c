@@ -239,7 +239,8 @@ show_about (TboWindow *tbo)
 {
     const gchar *authors[] = {
         "danigm <dani@danigm.net>",
-        "Actualizado por Jaime, 2026, https://github.com/j4imefoo/TBO",
+	"",
+        "Actualizado por Jaime, 2026",
         NULL
     };
     const gchar *artists[] = {"danigm <dani@danigm.net>",
@@ -249,7 +250,7 @@ show_about (TboWindow *tbo)
                               "Daniel Pavón Pérez",
                               "Juan Jesús Pérez Luna",
                               "",
-                              "Zapatero & Rajoy:",
+                              "Zapatero y Rajoy:",
                               "Alfonso de Cala",
                               "",
                               "South park style:",
