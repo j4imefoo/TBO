@@ -23,5 +23,6 @@
 #include <gtk/gtk.h>
 
 void get_base_name (gchar *str, gchar *ret, int size);
+gchar *tbo_get_data_path (const gchar *relative_path);
 
 #endif

@@ -56,14 +56,18 @@ struct _TboToolSelector
     gint start_m_w;
     gint start_m_h;
     gboolean clicked;
+    gboolean edit_text_on_release;
     gboolean over_resizer;
     gboolean over_rotater;
     gboolean resizing;
     gboolean rotating;
+    GtkWidget *toolarea_widget;
     GtkWidget *spin_w;
     GtkWidget *spin_h;
     GtkWidget *spin_x;
     GtkWidget *spin_y;
+    GtkWidget *color_button;
+    GtkWidget *border_button;
 };
 
 struct _TboToolSelectorClass
@@ -83,7 +87,8 @@ Frame * tbo_tool_selector_get_selected_frame (TboToolSelector *self);
 TboObjectBase * tbo_tool_selector_get_selected_obj (TboToolSelector *self);
 void tbo_tool_selector_set_selected (TboToolSelector *self, Frame *frame);
 void tbo_tool_selector_set_selected_obj (TboToolSelector *self, TboObjectBase *obj);
-GObject * tbo_tool_selector_new ();
+gboolean tbo_tool_selector_delete_selected (TboToolSelector *self);
+GObject * tbo_tool_selector_new (void);
 GObject * tbo_tool_selector_new_with_params (TboWindow *tbo);
 
 /*
@@ -116,4 +121,3 @@ TboAction * tbo_action_object_move_new (TboObjectBase *object, int x1, int y1, i
 
 
 #endif /* __TBO_TOOL_SELECTOR_H__ */
-

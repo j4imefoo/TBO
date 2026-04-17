@@ -43,7 +43,7 @@ tbo_action_del_data (TboAction *action, gpointer user_data)
 }
 
 TboUndoStack *
-tbo_undo_stack_new ()
+tbo_undo_stack_new (void)
 {
     TboUndoStack *stack = malloc (sizeof (TboUndoStack));
     stack->first = NULL;

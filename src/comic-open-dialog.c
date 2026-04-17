@@ -21,70 +21,25 @@
 #include <gtk/gtk.h>
 #include <glib/gi18n.h>
 #include "comic-open-dialog.h"
+#include "tbo-file-dialog.h"
 #include "tbo-drawing.h"
 #include "tbo-window.h"
 #include "comic.h"
 
 
-static GtkFileFilter * AddFilters (GtkWidget *filechooser);
-static GtkWidget * FileChooserWidget (TboWindow *window);
-
-
 gboolean
 tbo_comic_open_dialog (GtkWidget *widget, TboWindow *window)
 {
-    gint response;
-    GtkWidget *filechooser;
-    GtkFileFilter *filter;
-    char *filename;
+    gchar *filename = tbo_file_dialog_open_project (window);
 
-    filechooser = FileChooserWidget (window);
-    filter = AddFilters (filechooser);
-
-    response = gtk_dialog_run (GTK_DIALOG (filechooser));
-
-    if (response == GTK_RESPONSE_ACCEPT)
+    if (filename != NULL)
     {
-        filename = gtk_file_chooser_get_filename (GTK_FILE_CHOOSER (filechooser));
+        tbo_window_set_browse_path (window, filename);
         tbo_comic_open (window, filename);
-        tbo_window_set_path (window, filename);
         tbo_drawing_update (TBO_DRAWING (window->drawing));
         tbo_window_update_status (window, 0, 0);
+        g_free (filename);
     }
 
-    gtk_widget_destroy ((GtkWidget *) filechooser);
-
     return FALSE;
-}
-
-//Return the widget to choose file
-static GtkWidget *
-FileChooserWidget (TboWindow *window)
-{
-    GtkWidget *filechooser;
-    filechooser = gtk_file_chooser_dialog_new (_("Open"),
-                                               GTK_WINDOW (window->window),
-                                               GTK_FILE_CHOOSER_ACTION_OPEN,
-                                               GTK_STOCK_CANCEL,
-                                               GTK_RESPONSE_CANCEL,
-                                               GTK_STOCK_OPEN,
-                                               GTK_RESPONSE_ACCEPT,
-                                               NULL);
-    return filechooser;
-}
-
-//Return the files' filters
-static GtkFileFilter *
-AddFilters (GtkWidget *filechooser)
-{
-    GtkFileFilter *filter;
-    filter = gtk_file_filter_new ();
-    gtk_file_filter_set_name (filter, _("TBO files"));
-    gtk_file_filter_add_pattern (filter, "*.tbo");
-    gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (filechooser), filter);
-    filter = gtk_file_filter_new ();
-    gtk_file_filter_set_name (filter, _("All files"));
-    gtk_file_filter_add_pattern (filter, "*");
-    gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (filechooser), filter);
-    return filter;
 }

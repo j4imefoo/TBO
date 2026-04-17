@@ -24,117 +24,138 @@
 #include "frame.h"
 #include "tbo-object-svg.h"
 #include "tbo-object-pixmap.h"
+#include "tbo-files.h"
 #include "tbo-window.h"
+#include "tbo-tool-selector.h"
+#include "tbo-widget.h"
 
-static GtkWidget *DND_IMAGE = NULL;
-
-void
-drag_data_received_handl (GtkWidget *widget,
-                          GdkDragContext *context,
-                          gint x, gint y,
-                          GtkSelectionData *selection_data,
-                          guint target_type,
-                          guint time,
-                          TboWindow *tbo)
+static TboObjectBase *
+create_asset (const gchar *asset_path, gint x, gint y)
 {
+    if (tbo_files_is_svg_file ((gchar *) asset_path))
+        return TBO_OBJECT_BASE (tbo_object_svg_new_with_params (x, y, 0, 0, (gchar *) asset_path));
+
+    return TBO_OBJECT_BASE (tbo_object_pixmap_new_with_params (x, y, 0, 0, (gchar *) asset_path));
+}
+
+static void
+select_inserted_asset (TboWindow *tbo, Frame *frame, TboObjectBase *asset)
+{
+    TboToolSelector *selector;
+
+    tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_SELECTOR);
+    selector = TBO_TOOL_SELECTOR (tbo->toolbar->tools[TBO_TOOLBAR_SELECTOR]);
+    tbo_tool_selector_set_selected (selector, frame);
+    tbo_tool_selector_set_selected_obj (selector, asset);
+}
+
+static const gchar *
+get_drag_asset_path (GtkWidget *widget, const gchar *key, gpointer fallback)
+{
+    const gchar *path = g_object_get_data (G_OBJECT (widget), key);
+
+    if (path != NULL)
+        return path;
+
+    return fallback;
+}
+
+static GdkContentProvider *
+drag_prepare_handl (GtkDragSource *source,
+                    gdouble        x,
+                    gdouble        y,
+                    gpointer       user_data)
+{
+    GtkWidget *widget = GTK_WIDGET (user_data);
+    const gchar *asset_path = get_drag_asset_path (widget, "tbo-asset-relative-path", NULL);
+
+    if (asset_path == NULL)
+        return NULL;
+
+    return gdk_content_provider_new_typed (G_TYPE_STRING, asset_path);
+}
+
+static void
+drag_begin_handl (GtkDragSource *source,
+                  GdkDrag       *drag,
+                  gpointer       user_data)
+{
+    GtkWidget *widget = GTK_WIDGET (user_data);
+    GtkWidget *child = tbo_widget_get_first_child (widget);
+    GdkPaintable *paintable = NULL;
+
+    if (GTK_IS_PICTURE (child))
+        paintable = gtk_picture_get_paintable (GTK_PICTURE (child));
+    else if (GTK_IS_IMAGE (child))
+        paintable = gtk_image_get_paintable (GTK_IMAGE (child));
+
+    if (paintable != NULL)
+        gtk_drag_source_set_icon (source, paintable, 0, 0);
+}
+
+static gboolean
+drop_handl (GtkDropTarget *target,
+            const GValue  *value,
+            gdouble        x,
+            gdouble        y,
+            gpointer       user_data)
+{
+    TboWindow *tbo = user_data;
     GtkAdjustment *adj;
-    float zoom = tbo_drawing_get_zoom (TBO_DRAWING (tbo->drawing));
-    const gchar   *_sdata;
+    gdouble zoom = tbo_drawing_get_zoom (TBO_DRAWING (tbo->drawing));
+    const gchar *asset_path = g_value_get_string (value);
+    gint rx;
+    gint ry;
 
-    gboolean dnd_success = FALSE;
-    gboolean delete_selection_data = FALSE;
+    if (asset_path == NULL)
+        return FALSE;
 
-    /* Deal with what we are given from source */
-    if ((selection_data != NULL) && (gtk_selection_data_get_length (selection_data) >= 0))
-    {
-        if (gdk_drag_context_get_selected_action (context) == GDK_ACTION_ASK)
-        {
-            /* Ask the user to move or copy, then set the context action. */
-        }
+    adj = gtk_scrolled_window_get_hadjustment (GTK_SCROLLED_WINDOW (tbo->dw_scroll));
+    rx = tbo_frame_get_base_x ((x + gtk_adjustment_get_value (adj)) / zoom);
+    adj = gtk_scrolled_window_get_vadjustment (GTK_SCROLLED_WINDOW (tbo->dw_scroll));
+    ry = tbo_frame_get_base_y ((y + gtk_adjustment_get_value (adj)) / zoom);
 
-        if (gdk_drag_context_get_selected_action (context) == GDK_ACTION_MOVE)
-            delete_selection_data = TRUE;
+    return tbo_dnd_insert_asset (tbo, asset_path, rx, ry) != NULL;
+}
 
-        /* Check that we got the format we can use */
-        switch (target_type)
-        {
-            case TARGET_STRING:
-                _sdata = gtk_selection_data_get_data (selection_data);
+TboObjectBase *
+tbo_dnd_insert_asset (TboWindow *tbo, const gchar *asset_path, gint x, gint y)
+{
+    Frame *frame = tbo_drawing_get_current_frame (TBO_DRAWING (tbo->drawing));
+    TboObjectBase *asset;
 
-                TboObjectBase *image;
-                Frame *frame = tbo_drawing_get_current_frame (TBO_DRAWING (tbo->drawing));
-                adj = gtk_scrolled_window_get_hadjustment (GTK_SCROLLED_WINDOW (tbo->dw_scroll));
-                int rx = tbo_frame_get_base_x ((x + gtk_adjustment_get_value(adj)) / zoom);
-                adj = gtk_scrolled_window_get_vadjustment (GTK_SCROLLED_WINDOW (tbo->dw_scroll));
-                int ry = tbo_frame_get_base_y ((y + gtk_adjustment_get_value(adj)) / zoom);
+    if (frame == NULL || asset_path == NULL || *asset_path == '\0')
+        return NULL;
 
-                if (tbo_files_is_svg_file ((gchar *)_sdata)) {
-                    image = TBO_OBJECT_BASE (tbo_object_svg_new_with_params (rx, ry, 0, 0, (gchar*)_sdata));
-                } else {
-                    image = TBO_OBJECT_BASE (tbo_object_pixmap_new_with_params (rx, ry, 0, 0, (gchar*)_sdata));
-                }
+    if (x < 0 || y < 0 || x > frame->width || y > frame->height)
+        return NULL;
 
-                tbo_drawing_update (TBO_DRAWING (tbo->drawing));
-                tbo_frame_add_obj (frame, TBO_OBJECT_BASE (image));
-
-                dnd_success = TRUE;
-                break;
-
-            default:
-                g_print ("nothing good");
-        }
-    }
-
-    if (dnd_success == FALSE)
-    {
-        g_print ("DnD data transfer failed!\n");
-    }
-
-    gtk_drag_finish (context, dnd_success, delete_selection_data, time);
+    asset = create_asset (asset_path, x, y);
+    tbo_frame_add_obj (frame, asset);
+    select_inserted_asset (tbo, frame, asset);
+    tbo_window_mark_dirty (tbo);
+    tbo_drawing_update (TBO_DRAWING (tbo->drawing));
+    return asset;
 }
 
 void
-drag_data_get_handl (GtkWidget *widget,
-                     GdkDragContext *context,
-                     GtkSelectionData *selection_data,
-                     guint target_type,
-                     guint time,
-                     char *svg)
+tbo_dnd_setup_asset_source (GtkWidget *widget, const gchar *full_path, const gchar *relative_path)
 {
-    g_assert (selection_data != NULL);
-    switch (target_type)
-    {
-        case TARGET_STRING:
-            gtk_selection_data_set (selection_data,
-                                    gtk_selection_data_get_target (selection_data),
-                                    8*sizeof(char),
-                                    (guchar*) svg,
-                                    strlen (svg));
-            break;
-        default:
-            /* Default to some a safe target instead of fail. */
-            g_assert_not_reached ();
-    }
+    GtkDragSource *source = gtk_drag_source_new ();
+
+    gtk_drag_source_set_actions (source, GDK_ACTION_COPY);
+    g_object_set_data_full (G_OBJECT (widget), "tbo-asset-full-path", g_strdup (full_path), g_free);
+    g_object_set_data_full (G_OBJECT (widget), "tbo-asset-relative-path", g_strdup (relative_path), g_free);
+    g_signal_connect (source, "prepare", G_CALLBACK (drag_prepare_handl), widget);
+    g_signal_connect (source, "drag-begin", G_CALLBACK (drag_begin_handl), widget);
+    gtk_widget_add_controller (widget, GTK_EVENT_CONTROLLER (source));
 }
 
 void
-drag_begin_handl (GtkWidget *widget,
-                  GdkDragContext *context,
-                  char *svg)
+tbo_dnd_setup_drawing_dest (TboDrawing *drawing, TboWindow *tbo)
 {
-    DND_IMAGE = gtk_image_new_from_file (svg);
-    GdkPixbuf *pix = gtk_image_get_pixbuf (GTK_IMAGE (DND_IMAGE));
-    gtk_drag_set_icon_pixbuf (context, pix, 0, 0);
-}
+    GtkDropTarget *target = gtk_drop_target_new (G_TYPE_STRING, GDK_ACTION_COPY);
 
-void
-drag_end_handl (GtkWidget *widget,
-                GdkDragContext *context,
-                gpointer user_data)
-{
-    if (DND_IMAGE)
-    {
-        gtk_widget_destroy (GTK_WIDGET (DND_IMAGE));
-        DND_IMAGE = NULL;
-    }
+    g_signal_connect (target, "drop", G_CALLBACK (drop_handl), tbo);
+    gtk_widget_add_controller (GTK_WIDGET (drawing), GTK_EVENT_CONTROLLER (target));
 }

@@ -117,7 +117,7 @@ tbo_object_base_class_init (TboObjectBaseClass *klass)
 /* object functions */
 
 GObject *
-tbo_object_base_new ()
+tbo_object_base_new (void)
 {
     GObject *tbo_object;
     tbo_object = g_object_new (TBO_TYPE_OBJECT_BASE, NULL);

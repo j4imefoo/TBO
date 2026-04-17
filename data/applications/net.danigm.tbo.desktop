@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=TBO
+GenericName=Comic Editor
+Comment=Create comic strips and illustrated presentations
+Exec=tbo %f
+Icon=tbo
+Terminal=false
+StartupNotify=true
+StartupWMClass=net.danigm.tbo
+Categories=Graphics;VectorGraphics;GTK;

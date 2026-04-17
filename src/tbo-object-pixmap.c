@@ -19,10 +19,12 @@
 
 #include <glib.h>
 #include <string.h>
+#include <stdint.h>
 #include <cairo.h>
 #include <gdk/gdk.h>
 #include <stdio.h>
 #include "tbo-types.h"
+#include "tbo-files.h"
 #include "tbo-object-pixmap.h"
 
 G_DEFINE_TYPE (TboObjectPixmap, tbo_object_pixmap, TBO_TYPE_OBJECT_BASE);
@@ -31,32 +33,150 @@ static void draw (TboObjectBase *, Frame *, cairo_t *);
 static void save (TboObjectBase *, FILE *);
 static TboObjectBase * tclone (TboObjectBase *);
 
+static gboolean
+ensure_pixbuf (TboObjectPixmap *pixmap)
+{
+    GError *error = NULL;
+    gchar *path;
+
+    if (pixmap->pixbuf != NULL)
+        return TRUE;
+
+    path = tbo_files_expand_path (pixmap->path->str);
+    pixmap->pixbuf = gdk_pixbuf_new_from_file (path, &error);
+    if (pixmap->pixbuf == NULL)
+    {
+        if (error != NULL)
+        {
+            g_warning ("%s", error->message);
+            g_error_free (error);
+        }
+        g_free (path);
+        return FALSE;
+    }
+
+    g_free (path);
+    return TRUE;
+}
+
+static gboolean
+update_surface_cache (TboObjectPixmap *pixmap)
+{
+    cairo_surface_t *surface;
+    unsigned char *data;
+    int stride;
+    int width;
+    int height;
+    int src_stride;
+    guchar *src;
+    int x;
+    int y;
+
+    if (pixmap->scaled_pixbuf == NULL)
+        return FALSE;
+
+    if (pixmap->surface != NULL)
+    {
+        cairo_surface_destroy (pixmap->surface);
+        pixmap->surface = NULL;
+    }
+
+    width = gdk_pixbuf_get_width (pixmap->scaled_pixbuf);
+    height = gdk_pixbuf_get_height (pixmap->scaled_pixbuf);
+    src_stride = gdk_pixbuf_get_rowstride (pixmap->scaled_pixbuf);
+    src = gdk_pixbuf_get_pixels (pixmap->scaled_pixbuf);
+
+    surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width, height);
+    if (cairo_surface_status (surface) != CAIRO_STATUS_SUCCESS)
+    {
+        cairo_surface_destroy (surface);
+        return FALSE;
+    }
+
+    data = cairo_image_surface_get_data (surface);
+    stride = cairo_image_surface_get_stride (surface);
+
+    for (y = 0; y < height; y++)
+    {
+        uint32_t *dest = (uint32_t *) (data + (y * stride));
+        guchar *row = src + (y * src_stride);
+
+        for (x = 0; x < width; x++)
+        {
+            guchar r = row[x * 4 + 0];
+            guchar g = row[x * 4 + 1];
+            guchar b = row[x * 4 + 2];
+            guchar a = row[x * 4 + 3];
+
+            if (a != 255)
+            {
+                r = (guchar) ((r * a + 127) / 255);
+                g = (guchar) ((g * a + 127) / 255);
+                b = (guchar) ((b * a + 127) / 255);
+            }
+
+            dest[x] = ((uint32_t) a << 24) |
+                      ((uint32_t) r << 16) |
+                      ((uint32_t) g << 8) |
+                      (uint32_t) b;
+        }
+    }
+
+    cairo_surface_mark_dirty (surface);
+    pixmap->surface = surface;
+    return TRUE;
+}
+
+static gboolean
+ensure_scaled_pixbuf (TboObjectBase *self, TboObjectPixmap *pixmap)
+{
+    if (!ensure_pixbuf (pixmap))
+        return FALSE;
+
+    if (!self->width)
+        self->width = gdk_pixbuf_get_width (pixmap->pixbuf);
+    if (!self->height)
+        self->height = gdk_pixbuf_get_height (pixmap->pixbuf);
+
+    if (self->width <= 0 || self->height <= 0)
+        return FALSE;
+
+    if (pixmap->scaled_pixbuf != NULL &&
+        pixmap->cache_width == self->width &&
+        pixmap->cache_height == self->height)
+        return TRUE;
+
+    if (pixmap->scaled_pixbuf != NULL)
+    {
+        g_object_unref (pixmap->scaled_pixbuf);
+        pixmap->scaled_pixbuf = NULL;
+    }
+
+    pixmap->scaled_pixbuf = gdk_pixbuf_scale_simple (pixmap->pixbuf,
+                                                     self->width,
+                                                     self->height,
+                                                     GDK_INTERP_BILINEAR);
+    if (pixmap->scaled_pixbuf == NULL)
+        return FALSE;
+
+    if (!update_surface_cache (pixmap))
+    {
+        g_object_unref (pixmap->scaled_pixbuf);
+        pixmap->scaled_pixbuf = NULL;
+        return FALSE;
+    }
+
+    pixmap->cache_width = self->width;
+    pixmap->cache_height = self->height;
+    return TRUE;
+}
+
 static void
 draw (TboObjectBase *self, Frame *frame, cairo_t *cr)
 {
     TboObjectPixmap *pixmap = TBO_OBJECT_PIXMAP (self);
-    int w, h;
-    cairo_surface_t *image;
-    GdkPixbuf *pixbuf;
-    GError *error = NULL;
-    char path[255];
-
-    tbo_files_expand_path (pixmap->path->str, path);
-    pixbuf = gdk_pixbuf_new_from_file (path, &error);
-
-    if (!pixbuf) {
-        g_warning ("There's a problem here: %s", error->message);
+    if (!ensure_scaled_pixbuf (self, pixmap))
         return;
-    }
-
-    w = gdk_pixbuf_get_width (pixbuf);
-    h = gdk_pixbuf_get_height (pixbuf);
-
-    if (!self->width) self->width = w;
-    if (!self->height) self->height = h;
-
-    float factorw = (float)self->width / (float)w;
-    float factorh = (float)self->height / (float)h;
 
     cairo_matrix_t mx = {1, 0, 0, 1, 0, 0};
     tbo_object_base_get_flip_matrix (self, &mx);
@@ -66,18 +186,14 @@ draw (TboObjectBase *self, Frame *frame, cairo_t *cr)
     cairo_translate (cr, frame->x+self->x, frame->y+self->y);
     cairo_rotate (cr, self->angle);
     cairo_transform (cr, &mx);
-    cairo_scale (cr, factorw, factorh);
 
-    gdk_cairo_set_source_pixbuf (cr, pixbuf, 0, 0);
+    cairo_set_source_surface (cr, pixmap->surface, 0, 0);
     cairo_paint (cr);
 
-    cairo_scale (cr, 1/factorw, 1/factorh);
     cairo_transform (cr, &mx);
     cairo_rotate (cr, -self->angle);
     cairo_translate (cr, -(frame->x+self->x), -(frame->y+self->y));
     cairo_reset_clip (cr);
-
-    cairo_surface_destroy (image);
 }
 
 static void
@@ -122,6 +238,11 @@ static void
 tbo_object_pixmap_init (TboObjectPixmap *self)
 {
     self->path = NULL;
+    self->pixbuf = NULL;
+    self->scaled_pixbuf = NULL;
+    self->surface = NULL;
+    self->cache_width = 0;
+    self->cache_height = 0;
 
     self->parent_instance.draw = draw;
     self->parent_instance.save = save;
@@ -131,6 +252,12 @@ tbo_object_pixmap_init (TboObjectPixmap *self)
 static void
 tbo_object_pixmap_finalize (GObject *self)
 {
+    if (TBO_OBJECT_PIXMAP (self)->scaled_pixbuf)
+        g_object_unref (TBO_OBJECT_PIXMAP (self)->scaled_pixbuf);
+    if (TBO_OBJECT_PIXMAP (self)->surface)
+        cairo_surface_destroy (TBO_OBJECT_PIXMAP (self)->surface);
+    if (TBO_OBJECT_PIXMAP (self)->pixbuf)
+        g_object_unref (TBO_OBJECT_PIXMAP (self)->pixbuf);
     if (TBO_OBJECT_PIXMAP (self)->path)
         g_string_free (TBO_OBJECT_PIXMAP (self)->path, TRUE);
     /* Chain up to the parent class */
@@ -147,7 +274,7 @@ tbo_object_pixmap_class_init (TboObjectPixmapClass *klass)
 /* object functions */
 
 GObject *
-tbo_object_pixmap_new ()
+tbo_object_pixmap_new (void)
 {
     GObject *tbo_object;
     TboObjectPixmap *pixmap;
@@ -177,4 +304,3 @@ tbo_object_pixmap_new_with_params (gint   x,
 
     return G_OBJECT (pixmap);
 }
-

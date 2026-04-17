@@ -21,6 +21,7 @@
 #include <glib/gi18n.h>
 #include <gtk/gtk.h>
 #include <stdio.h>
+#include <string.h>
 #include "tbo-types.h"
 #include "tbo-object-text.h"
 
@@ -46,7 +47,7 @@ draw (TboObjectBase *self, Frame *frame, cairo_t *cr)
         return;
     }
 
-    gdk_cairo_set_source_color (cr, textobj->font_color);
+    gdk_cairo_set_source_rgba (cr, textobj->font_color);
 
     layout = pango_cairo_create_layout (cr);
     pango_layout_set_text (layout, text, -1);
@@ -94,9 +95,9 @@ save (TboObjectBase *self, FILE *file)
 
     TboObjectText *text = TBO_OBJECT_TEXT (self);
 
-    r = (float)text->font_color->red / (float)COLORMAX;
-    g = (float)text->font_color->green / (float)COLORMAX;
-    b = (float)text->font_color->blue / (float)COLORMAX;
+    r = text->font_color->red;
+    g = text->font_color->green;
+    b = text->font_color->blue;
 
     snprintf (buffer, 1024, "   <text x=\"%d\" y=\"%d\" "
                            "width=\"%d\" height=\"%d\" "
@@ -121,15 +122,18 @@ tclone (TboObjectBase *self)
 {
     TboObjectText *text;
     TboObjectBase *newtext;
+    gchar *font;
     text = TBO_OBJECT_TEXT (self);
+    font = tbo_object_text_get_string (text);
 
     newtext = TBO_OBJECT_BASE (tbo_object_text_new_with_params (self->x,
                                                                 self->y,
                                                                 self->width,
                                                                 self->height,
                                                                 text->text->str,
-                                                                tbo_object_text_get_string (text),
+                                                                font,
                                                                 text->font_color));
+    g_free (font);
     newtext->angle = self->angle;
     newtext->flipv = self->flipv;
     newtext->fliph = self->fliph;
@@ -160,7 +164,7 @@ tbo_object_text_finalize (GObject *self)
     if (text->description)
         pango_font_description_free (text->description);
     if (text->font_color)
-        gdk_color_free (text->font_color);
+        gdk_rgba_free (text->font_color);
     /* Chain up to the parent class */
     G_OBJECT_CLASS (tbo_object_text_parent_class)->finalize (self);
 }
@@ -175,16 +179,16 @@ tbo_object_text_class_init (TboObjectTextClass *klass)
 /* object functions */
 
 GObject *
-tbo_object_text_new ()
+tbo_object_text_new (void)
 {
     GObject *tbo_object;
     TboObjectText *text;
-    GdkColor color = { 0, 0, 0, 0 };
+    GdkRGBA color = { 0, 0, 0, 1 };
     tbo_object = g_object_new (TBO_TYPE_OBJECT_TEXT, NULL);
     text = TBO_OBJECT_TEXT (tbo_object);
     text->text = g_string_new (_("text"));
     text->description = pango_font_description_from_string ("Sans Normal 27");
-    text->font_color = gdk_color_copy (&color);
+    text->font_color = gdk_rgba_copy (&color);
 
     return tbo_object;
 }
@@ -196,7 +200,7 @@ tbo_object_text_new_with_params (gint     x,
                                  gint     height,
                                  gchar    *text,
                                  gchar    *fontname,
-                                 GdkColor *color)
+                                 GdkRGBA  *color)
 {
     TboObjectBase *obj;
     TboObjectText *textobj;
@@ -209,8 +213,12 @@ tbo_object_text_new_with_params (gint     x,
     obj->height = height;
 
     g_string_assign (textobj->text, text);
+    if (textobj->description)
+        pango_font_description_free (textobj->description);
     textobj->description = pango_font_description_from_string (fontname);
-    textobj->font_color = gdk_color_copy (color);
+    if (textobj->font_color)
+        gdk_rgba_free (textobj->font_color);
+    textobj->font_color = gdk_rgba_copy (color);
 
     return G_OBJECT (obj);
 }
@@ -238,11 +246,11 @@ tbo_object_text_change_font (TboObjectText *self, gchar *font)
 }
 
 void
-tbo_object_text_change_color (TboObjectText *self, GdkColor *color)
+tbo_object_text_change_color (TboObjectText *self, GdkRGBA *color)
 {
     if (self->font_color)
-        gdk_color_free (self->font_color);
-    self->font_color = gdk_color_copy (color);
+        gdk_rgba_free (self->font_color);
+    self->font_color = gdk_rgba_copy (color);
 }
 
 gchar *

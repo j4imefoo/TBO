@@ -29,16 +29,16 @@ G_DEFINE_TYPE (TboToolFrame, tbo_tool_frame, TBO_TYPE_TOOL_BASE);
 #define MINIMUM(x, y) x < y ? (int)x : (int)y
 
 /* Headers */
-static void on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event);
-static void on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event);
-static void on_release (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event);
+static void on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
+static void on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
+static void on_release (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
 static void drawing (TboToolBase *tool, cairo_t *cr);
 
 /* Definitions */
 
 /* tool signal */
 static void
-on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event)
+on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 {
     int x, y;
     TboToolFrame *self = TBO_TOOL_FRAME (tool);
@@ -67,7 +67,7 @@ on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event)
 }
 
 static void
-on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
+on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 {
     TboToolFrame *self = TBO_TOOL_FRAME (tool);
     self->n_frame_x = (int)event->x;
@@ -75,7 +75,7 @@ on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
 }
 
 static void
-on_release (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
+on_release (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 {
     int w, h;
     TboWindow *tbo = tool->tbo;
@@ -89,6 +89,7 @@ on_release (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
         tbo_page_new_frame (tbo_comic_get_current_page (tbo->comic),
                 MINIMUM (self->n_frame_x, event->x), MINIMUM (self->n_frame_y, event->y),
                 w, h);
+        tbo_window_mark_dirty (tbo);
     }
 
     self->n_frame_x = -1;
@@ -134,7 +135,7 @@ tbo_tool_frame_class_init (TboToolFrameClass *klass)
 /* object functions */
 
 GObject *
-tbo_tool_frame_new ()
+tbo_tool_frame_new (void)
 {
     GObject *tbo_tool;
     tbo_tool = g_object_new (TBO_TYPE_TOOL_FRAME, NULL);
@@ -151,4 +152,3 @@ tbo_tool_frame_new_with_params (TboWindow *tbo)
     tbo_tool_base->tbo = tbo;
     return tbo_tool;
 }
-

@@ -46,8 +46,8 @@ struct _TboUndoStack {
     gboolean last_flag;
 };
 
-TboUndoStack * tbo_undo_stack_new ();
-void tbo_undo_stack_del ();
+TboUndoStack * tbo_undo_stack_new (void);
+void tbo_undo_stack_del (TboUndoStack *stack);
 void tbo_undo_stack_insert (TboUndoStack *stack, TboAction *action);
 void tbo_undo_stack_undo (TboUndoStack *stack);
 void tbo_undo_stack_redo (TboUndoStack *stack);

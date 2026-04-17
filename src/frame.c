@@ -266,7 +266,7 @@ tbo_frame_add_obj (Frame *frame, TboObjectBase *obj)
 }
 
 float
-tbo_frame_get_scale_factor ()
+tbo_frame_get_scale_factor (void)
 {
     return SCALE_FACTOR;
 }
@@ -279,11 +279,11 @@ tbo_frame_del_obj (Frame *frame, TboObjectBase *obj)
 }
 
 void
-tbo_frame_set_color (Frame *frame, GdkColor *color)
+tbo_frame_set_color (Frame *frame, GdkRGBA *color)
 {
-    frame->color->r = color->red / 65535.0;
-    frame->color->g = color->green / 65535.0;
-    frame->color->b = color->blue / 65535.0;
+    frame->color->r = color->red;
+    frame->color->g = color->green;
+    frame->color->b = color->blue;
     BASE_COLOR.r = frame->color->r;
     BASE_COLOR.g = frame->color->g;
     BASE_COLOR.b = frame->color->b;

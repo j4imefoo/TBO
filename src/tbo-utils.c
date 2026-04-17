@@ -18,6 +18,7 @@
 
 
 #include <gtk/gtk.h>
+#include <glib/gstdio.h>
 #include "tbo-utils.h"
 
 
@@ -32,4 +33,16 @@ get_base_name (gchar *str, gchar *ret, int size)
     dirname--;
     snprintf (ret, size, "%s", *dirname);
     g_strfreev (paths);
+}
+
+gchar *
+tbo_get_data_path (const gchar *relative_path)
+{
+    gchar *installed_path = g_build_filename (DATA_DIR, relative_path, NULL);
+
+    if (g_file_test (installed_path, G_FILE_TEST_EXISTS))
+        return installed_path;
+
+    g_free (installed_path);
+    return g_build_filename (SOURCE_DATA_DIR, relative_path, NULL);
 }

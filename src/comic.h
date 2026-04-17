@@ -39,8 +39,7 @@ Page *tbo_comic_prev_page (Comic *comic);
 Page *tbo_comic_get_current_page (Comic *comic);
 void tbo_comic_set_current_page (Comic *comic, Page *page);
 void tbo_comic_set_current_page_nth (Comic *comic, int nth);
-void tbo_comic_save (TboWindow *tbo, char *filename);
+gboolean tbo_comic_save (TboWindow *tbo, char *filename);
 void tbo_comic_open (TboWindow *window, char *filename);
 
 #endif
-

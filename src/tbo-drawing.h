@@ -40,18 +40,19 @@ typedef struct _TboDrawingClass TboDrawingClass;
 
 struct _TboDrawing
 {
-    GtkLayout parent_instance;
+    GtkDrawingArea parent_instance;
 
     /* instance members */
     TboToolBase *tool;
     Frame *current_frame;
     gdouble zoom;
     Comic *comic;
+    guint redraw_source_id;
 };
 
 struct _TboDrawingClass
 {
-    GtkLayoutClass parent_class;
+    GtkDrawingAreaClass parent_class;
 
     /* class members */
 };
@@ -63,7 +64,7 @@ GType tbo_drawing_get_type (void);
  * Method definitions.
  */
 
-GtkWidget * tbo_drawing_new ();
+GtkWidget * tbo_drawing_new (void);
 GtkWidget * tbo_drawing_new_with_params (Comic *comic);
 void tbo_drawing_update (TboDrawing *self);
 void tbo_drawing_set_current_frame (TboDrawing *self, Frame *frame);
@@ -79,4 +80,3 @@ void tbo_drawing_adjust_scroll (TboDrawing *self);
 void tbo_drawing_init_dnd (TboDrawing *self, TboWindow *tbo);
 
 #endif /* __TBO_DRAWING_H__ */
-

@@ -87,7 +87,7 @@ tbo_tooltip_set (const char *tooltip, int x, int y, TboWindow *tbo)
     else
     {
         // if it's the same passing
-        if (x == X && y == Y && !strcmp (tooltip, TOOLTIP->str))
+        if (tooltip != NULL && x == X && y == Y && !strcmp (tooltip, TOOLTIP->str))
             return;
 
         // removing tooltip if tooltip == NULL
@@ -112,7 +112,7 @@ tbo_tooltip_set (const char *tooltip, int x, int y, TboWindow *tbo)
 }
 
 GString *
-tbo_tooltip_get ()
+tbo_tooltip_get (void)
 {
     return TOOLTIP;
 }
@@ -153,10 +153,8 @@ void
 tbo_tooltip_set_center_timeout (const char *tooltip, int timeout, TboWindow *tbo)
 {
     int x, y;
-    GtkAllocation alloc;
-    gtk_widget_get_allocation (tbo->drawing, &alloc);
-    x = alloc.width / 2;
-    y = alloc.height / 2;
+    x = gtk_widget_get_width (tbo->drawing) / 2;
+    y = gtk_widget_get_height (tbo->drawing) / 2;
 
     tbo_tooltip_set (tooltip, x, y, tbo);
     g_timeout_add (timeout, quit_tooltip_cb, tbo);

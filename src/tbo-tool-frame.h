@@ -60,8 +60,7 @@ GType tbo_tool_frame_get_type (void);
 /*
  * Method definitions.
  */
-GObject * tbo_tool_frame_new ();
+GObject * tbo_tool_frame_new (void);
 GObject * tbo_tool_frame_new_with_params (TboWindow *tbo);
 
 #endif /* __TBO_TOOL_FRAME_H__ */
-

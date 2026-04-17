@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 
-include /usr/share/cdbs/1/rules/debhelper.mk
-include /usr/share/cdbs/1/class/autotools.mk
+%:
+	dh $@ --buildsystem=meson
 
-# Add here any variable or target overrides you need.
-# DEB_CONFIGURE_SCRIPT := ./autogen.sh
+override_dh_auto_test:
+	xvfb-run -a meson test -C obj-$(DEB_HOST_GNU_TYPE) --no-rebuild --print-errorlogs --num-processes 1

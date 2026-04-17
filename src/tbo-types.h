@@ -59,8 +59,22 @@ typedef struct
 
 } Frame;
 
+typedef struct
+{
+    double x;
+    double y;
+    guint button;
+    guint n_press;
+    GdkModifierType state;
+} TboPointerEvent;
+
+typedef struct
+{
+    guint keyval;
+    GdkModifierType state;
+} TboKeyEvent;
+
 struct _TboWindow;
 typedef struct _TboWindow TboWindow;
 
 #endif
-

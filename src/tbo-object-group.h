@@ -57,7 +57,7 @@ GType tbo_object_group_get_type (void);
  * Method definitions.
  */
 
-GObject * tbo_object_group_new ();
+GObject * tbo_object_group_new (void);
 void tbo_object_group_add (TboObjectGroup *self, TboObjectBase *obj);
 void tbo_object_group_del (TboObjectGroup *self, TboObjectBase *obj);
 void tbo_object_group_set_vars (TboObjectBase *self);
@@ -65,4 +65,3 @@ void tbo_object_group_unset_vars (TboObjectBase *self);
 void tbo_object_group_update_status (TboObjectGroup *self);
 
 #endif /* __TBO_OBJECT_GROUP_H__ */
-

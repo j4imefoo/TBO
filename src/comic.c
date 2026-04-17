@@ -22,14 +22,16 @@
 #include <string.h>
 #include <gtk/gtk.h>
 #include <glib/gi18n.h>
-#include <malloc.h>
+#include <stdlib.h>
 #include <string.h>
 #include "comic.h"
 #include "tbo-types.h"
 #include "tbo-window.h"
 #include "page.h"
 #include "comic-load.h"
+#include "tbo-drawing.h"
 #include "tbo-utils.h"
+#include "tbo-widget.h"
 
 Comic *
 tbo_comic_new (const char *title, int width, int height)
@@ -172,7 +174,7 @@ tbo_comic_del_current_page (Comic *comic)
     return TRUE;
 }
 
-void
+gboolean
 tbo_comic_save (TboWindow *tbo, char *filename)
 {
     GList *p;
@@ -182,16 +184,11 @@ tbo_comic_save (TboWindow *tbo, char *filename)
 
     if (!file)
     {
-        GtkWidget *dialog = gtk_message_dialog_new (NULL,
-                                                    GTK_DIALOG_MODAL,
-                                                    GTK_MESSAGE_ERROR,
-                                                    GTK_BUTTONS_CLOSE,
-                                                    _("Failed saving: %s"),
-                                                    strerror (errno));
         perror (_("failed saving"));
-        gtk_dialog_run (GTK_DIALOG (dialog));
-        gtk_widget_destroy ((GtkWidget *) dialog);
-        return;
+        tbo_alert_show (GTK_WINDOW (tbo->window),
+                        _("Failed saving"),
+                        strerror (errno));
+        return FALSE;
     }
     get_base_name (filename, comic->title, 255);
     gtk_window_set_title (GTK_WINDOW (tbo->window), comic->title);
@@ -209,32 +206,42 @@ tbo_comic_save (TboWindow *tbo, char *filename)
     snprintf (buffer, 255, "</tbo>\n");
     fwrite (buffer, sizeof (char), strlen (buffer), file);
     fclose (file);
+    tbo_window_mark_clean (tbo);
+    return TRUE;
 }
 
 void
 tbo_comic_open (TboWindow *window, char *filename)
 {
     Comic *newcomic = tbo_comic_load (filename);
+    Comic *oldcomic;
     int nth;
+    int n_pages;
+
     if (newcomic)
     {
-        tbo_comic_free (window->comic);
+        oldcomic = window->comic;
         window->comic = newcomic;
         gtk_window_set_title (GTK_WINDOW (window->window), window->comic->title);
 
-        for (nth=gtk_notebook_get_n_pages (GTK_NOTEBOOK (window->notebook)); nth>=0; nth--)
+        n_pages = tbo_window_get_page_count (window);
+        for (nth = n_pages - 1; nth >= 0; nth--)
         {
-            gtk_notebook_remove_page (GTK_NOTEBOOK (window->notebook), nth);
+            tbo_window_remove_page_widget (window, nth);
         }
+
+        tbo_comic_free (oldcomic);
 
         for (nth=0; nth<tbo_comic_len (window->comic); nth++)
         {
-            gtk_notebook_insert_page (GTK_NOTEBOOK (window->notebook),
-                                      create_darea (window),
-                                      NULL,
-                                      nth);
+            tbo_window_add_page_widget (window, create_darea (window));
         }
+
+        tbo_window_set_path (window, filename);
+        tbo_window_set_current_tab_page (window, TRUE);
+        tbo_drawing_adjust_scroll (TBO_DRAWING (window->drawing));
+        tbo_drawing_update (TBO_DRAWING (window->drawing));
+        tbo_window_update_status (window, 0, 0);
+        tbo_window_mark_clean (window);
     }
-    tbo_toolbar_set_selected_tool (window->toolbar, TBO_TOOLBAR_NONE);
-    tbo_toolbar_set_selected_tool (window->toolbar, TBO_TOOLBAR_SELECTOR);
 }

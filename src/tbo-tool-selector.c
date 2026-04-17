@@ -24,10 +24,13 @@
 #include "comic.h"
 #include "frame.h"
 #include "page.h"
+#include "tbo-window.h"
 #include "tbo-ui-utils.h"
+#include "tbo-widget.h"
 #include "tbo-tool-selector.h"
 #include "tbo-drawing.h"
 #include "tbo-object-group.h"
+#include "tbo-tool-text.h"
 #include "ui-menu.h"
 #include "tbo-tooltip.h"
 #include "tbo-undo.h"
@@ -35,19 +38,24 @@
 G_DEFINE_TYPE (TboToolSelector, tbo_tool_selector, TBO_TYPE_TOOL_BASE);
 
 /* Headers */
-static void on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event);
-static void on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event);
-static void on_release (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event);
-static void on_key (TboToolBase *tool, GtkWidget *widget, GdkEventKey *event);
+static void on_select (TboToolBase *tool);
+static void on_unselect (TboToolBase *tool);
+static void on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
+static void on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
+static void on_release (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
+static void on_key (TboToolBase *tool, GtkWidget *widget, TboKeyEvent event);
 static void drawing (TboToolBase *tool, cairo_t *cr);
 
-static void frame_view_on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event);
-static void page_view_on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event);
-static void frame_view_on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event);
-static void page_view_on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event);
+static void frame_view_on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
+static void page_view_on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
+static void frame_view_on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
+static void page_view_on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
 static void frame_view_drawing (TboToolBase *tool, cairo_t *cr);
 static void page_view_drawing (TboToolBase *tool, cairo_t *cr);
-static void frame_view_on_key (TboToolBase *tool, GtkWidget *widget, GdkEventKey *event);
+static void frame_view_on_key (TboToolBase *tool, GtkWidget *widget, TboKeyEvent event);
+static gboolean delete_selected (TboToolSelector *self);
+static void open_text_editor (TboToolSelector *self, TboObjectText *text);
+static void finalize (GObject *object);
 
 /* Definitions */
 
@@ -68,56 +76,41 @@ update_selected_cb (GtkSpinButton *widget, TboToolSelector *tool)
     return FALSE;
 }
 
-static gboolean
-update_color_cb (GtkColorButton *button, TboToolSelector *tool)
-{
-    TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (tool)->tbo->drawing);
-    if (tool->resizing || tool->clicked || tool->selected_frame == NULL)
-        return FALSE;
-
-    GdkColor color = { 0, 0, 0, 0 };
-    gtk_color_button_get_color (button, &color);
-    tbo_frame_set_color (tool->selected_frame, &color);
-    tbo_drawing_update (drawing);
-    return FALSE;
-}
-
-static gboolean
-update_border_cb (GtkToggleButton *button, TboToolSelector *tool)
-{
-    TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (tool)->tbo->drawing);
-    if (tool->resizing || tool->clicked || tool->selected_frame == NULL)
-        return FALSE;
-
-    tool->selected_frame->border = !tool->selected_frame->border;
-    tbo_drawing_update (drawing);
-    return FALSE;
-}
-
 static void
-empty_tool_area (TboToolSelector *self)
+update_color_cb (GtkWidget *button, GParamSpec *pspec, TboToolSelector *tool)
 {
-    tbo_empty_tool_area (TBO_TOOL_BASE (self)->tbo);
-    self->spin_x = NULL;
-    self->spin_y = NULL;
-    self->spin_h = NULL;
-    self->spin_w = NULL;
+    TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (tool)->tbo->drawing);
+    if (tool->resizing || tool->clicked || tool->selected_frame == NULL)
+        return;
+
+    const GdkRGBA *color = gtk_color_dialog_button_get_rgba (GTK_COLOR_DIALOG_BUTTON (button));
+    tbo_frame_set_color (tool->selected_frame, (GdkRGBA *) color);
+    tbo_drawing_update (drawing);
+}
+
+static gboolean
+update_border_cb (GtkCheckButton *button, TboToolSelector *tool)
+{
+    TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (tool)->tbo->drawing);
+    if (tool->resizing || tool->clicked || tool->selected_frame == NULL)
+        return FALSE;
+
+    tool->selected_frame->border = gtk_check_button_get_active (button);
+    tbo_drawing_update (drawing);
+    return FALSE;
 }
 
 static void
 update_tool_area (TboToolSelector *self)
 {
-    TboWindow *tbo = TBO_TOOL_BASE (self)->tbo;
-    GtkWidget *toolarea = tbo->toolarea;
+    GtkWidget *toolarea = self->toolarea_widget;
     GtkWidget *hpanel;
     GtkWidget *label;
-    GtkWidget *color;
-    GtkWidget *border;
-    GdkColor gdk_color = { 0, 0, 0, 0 };
+    GdkRGBA gdk_color = { 0, 0, 0, 1 };
+    GtkColorDialog *color_dialog;
 
     if (!self->spin_x)
     {
-        empty_tool_area (self);
         self->spin_x = add_spin_with_label (toolarea, "x: ", self->selected_frame->x);
         self->spin_y = add_spin_with_label (toolarea, "y: ", self->selected_frame->y);
         self->spin_w = add_spin_with_label (toolarea, "w: ", self->selected_frame->width);
@@ -128,32 +121,71 @@ update_tool_area (TboToolSelector *self)
         g_signal_connect (self->spin_w, "value-changed", G_CALLBACK (update_selected_cb), self);
         g_signal_connect (self->spin_h, "value-changed", G_CALLBACK (update_selected_cb), self);
 
-        hpanel = gtk_hbox_new (FALSE, 0);
+        hpanel = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
         label = gtk_label_new (_("Background color: "));
-        gtk_misc_set_alignment (GTK_MISC (label), 0, 0);
-        color = gtk_color_button_new ();
-        gdk_color.red = self->selected_frame->color->r * 65535;
-        gdk_color.green = self->selected_frame->color->g * 65535;
-        gdk_color.blue = self->selected_frame->color->b * 65535;
-        gtk_color_button_set_color (GTK_COLOR_BUTTON (color), &gdk_color);
+        gtk_label_set_xalign (GTK_LABEL (label), 0.0);
+        gtk_label_set_yalign (GTK_LABEL (label), 0.5);
+        color_dialog = gtk_color_dialog_new ();
+        self->color_button = gtk_color_dialog_button_new (color_dialog);
+        gdk_color.red = self->selected_frame->color->r;
+        gdk_color.green = self->selected_frame->color->g;
+        gdk_color.blue = self->selected_frame->color->b;
+        gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->color_button), &gdk_color);
 
-        gtk_box_pack_start (GTK_BOX (hpanel), label, TRUE, TRUE, 5);
-        gtk_box_pack_start (GTK_BOX (hpanel), color, TRUE, TRUE, 5);
-        gtk_box_pack_start (GTK_BOX (toolarea), hpanel, FALSE, FALSE, 5);
-        g_signal_connect (color, "color-set", G_CALLBACK (update_color_cb), self);
+        tbo_box_pack_start (hpanel, label, TRUE, TRUE, 5);
+        tbo_box_pack_start (hpanel, self->color_button, TRUE, TRUE, 5);
+        tbo_box_pack_start (toolarea, hpanel, FALSE, FALSE, 5);
+        g_signal_connect (self->color_button, "notify::rgba", G_CALLBACK (update_color_cb), self);
 
-        border = gtk_check_button_new_with_label (_("border"));
-        gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (border), self->selected_frame->border);
-        gtk_box_pack_start (GTK_BOX (toolarea), border, FALSE, FALSE, 5);
-        g_signal_connect (border, "toggled", G_CALLBACK (update_border_cb), self);
+        self->border_button = gtk_check_button_new_with_label (_("border"));
+        gtk_check_button_set_active (GTK_CHECK_BUTTON (self->border_button), self->selected_frame->border);
+        tbo_box_pack_start (toolarea, self->border_button, FALSE, FALSE, 5);
+        g_signal_connect (self->border_button, "toggled", G_CALLBACK (update_border_cb), self);
 
-        gtk_widget_show_all (toolarea);
+        tbo_widget_show_all (toolarea);
     }
 
     gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_x), self->selected_frame->x);
     gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_y), self->selected_frame->y);
     gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_w), self->selected_frame->width);
     gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_h), self->selected_frame->height);
+    gtk_check_button_set_active (GTK_CHECK_BUTTON (self->border_button), self->selected_frame->border);
+    gdk_color.red = self->selected_frame->color->r;
+    gdk_color.green = self->selected_frame->color->g;
+    gdk_color.blue = self->selected_frame->color->b;
+    gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->color_button), &gdk_color);
+}
+
+static void
+on_select (TboToolBase *tool)
+{
+    TboToolSelector *self = TBO_TOOL_SELECTOR (tool);
+
+    if (self->toolarea_widget == NULL)
+    {
+        self->toolarea_widget = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+        g_object_ref_sink (self->toolarea_widget);
+    }
+
+    tbo_empty_tool_area (tool->tbo);
+    tbo_widget_add_child (tool->tbo->toolarea, self->toolarea_widget);
+
+    if (self->selected_frame != NULL)
+        update_tool_area (self);
+    else
+        update_menubar (tool->tbo);
+}
+
+static void
+on_unselect (TboToolBase *tool)
+{
+    TboToolSelector *self = TBO_TOOL_SELECTOR (tool);
+
+    if (self->toolarea_widget != NULL &&
+        gtk_widget_get_parent (self->toolarea_widget) == GTK_WIDGET (tool->tbo->toolarea))
+    {
+        tbo_widget_remove_child (tool->tbo->toolarea, self->toolarea_widget);
+    }
 }
 
 static gboolean
@@ -245,7 +277,7 @@ moved_object (TboToolSelector *tool)
 
 /* tool signal */
 static void
-on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event)
+on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 {
     TboDrawing *drawing = TBO_DRAWING (tool->tbo->drawing);
     Frame *frame = tbo_drawing_get_current_frame (drawing);
@@ -258,7 +290,7 @@ on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event)
 }
 
 static void
-on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
+on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 {
     TboDrawing *drawing = TBO_DRAWING (tool->tbo->drawing);
     Frame *frame = tbo_drawing_get_current_frame (drawing);
@@ -271,10 +303,11 @@ on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
 }
 
 static void
-on_release (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
+on_release (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 {
     TboToolSelector *self = TBO_TOOL_SELECTOR (tool);
     TboWindow *tbo = tool->tbo;
+    gboolean should_open_text_editor = FALSE;
     // TODO create undo actions for movements / resizing and rotating
     if (self->selected_object && moved_object (self)) {
         tbo_undo_stack_insert (tbo->undo_stack,
@@ -283,29 +316,96 @@ on_release (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
                                                            self->start_m_y,
                                                            self->selected_object->x,
                                                            self->selected_object->y));
+        tbo_window_mark_dirty (tbo);
     }
     else if (self->selected_frame && moved_frame (self)) {
         tbo_undo_stack_insert (tbo->undo_stack,
                                tbo_action_frame_move_new (self->selected_frame,
                                                           self->start_m_x,
                                                           self->start_m_y,
-                                                          self->selected_frame->x,
-                                                          self->selected_frame->y));
+                                                            self->selected_frame->x,
+                                                            self->selected_frame->y));
+        tbo_window_mark_dirty (tbo);
     }
+
+    should_open_text_editor = self->edit_text_on_release &&
+                              self->selected_object != NULL &&
+                              TBO_IS_OBJECT_TEXT (self->selected_object) &&
+                              !moved_object (self) &&
+                              !self->resizing &&
+                              !self->rotating;
+
     self->start_x = 0;
     self->start_y = 0;
     self->clicked = FALSE;
+    self->edit_text_on_release = FALSE;
     self->resizing = FALSE;
     self->rotating = FALSE;
+
+    if (should_open_text_editor)
+        open_text_editor (self, TBO_OBJECT_TEXT (self->selected_object));
 }
 
 static void
-on_key (TboToolBase *tool, GtkWidget *widget, GdkEventKey *event)
+on_key (TboToolBase *tool, GtkWidget *widget, TboKeyEvent event)
 {
+    TboToolSelector *self = TBO_TOOL_SELECTOR (tool);
     TboDrawing *drawing = TBO_DRAWING (tool->tbo->drawing);
     Frame *frame = tbo_drawing_get_current_frame (drawing);
+
+    if (event.keyval == GDK_KEY_Delete || event.keyval == GDK_KEY_KP_Delete)
+    {
+        if (delete_selected (self))
+            tbo_drawing_update (drawing);
+        return;
+    }
+
     if (frame)
         frame_view_on_key (tool, widget, event);
+    else if (self->selected_frame != NULL &&
+             (event.keyval == GDK_KEY_Return || event.keyval == GDK_KEY_KP_Enter))
+        tbo_window_enter_frame (tool->tbo, self->selected_frame);
+}
+
+static gboolean
+delete_selected (TboToolSelector *self)
+{
+    TboWindow *tbo = TBO_TOOL_BASE (self)->tbo;
+    TboDrawing *drawing = TBO_DRAWING (tbo->drawing);
+    TboObjectBase *obj = self->selected_object;
+    Frame *frame = self->selected_frame;
+    Page *page = tbo_comic_get_current_page (tbo->comic);
+
+    if (obj != NULL && tbo_drawing_get_current_frame (drawing) != NULL)
+    {
+        tbo_frame_del_obj (frame, obj);
+        self->selected_object = NULL;
+        tbo_window_mark_dirty (tbo);
+        update_menubar (tbo);
+        return TRUE;
+    }
+
+    if (frame != NULL && tbo_drawing_get_current_frame (drawing) == NULL)
+    {
+        tbo_page_del_frame (page, frame);
+        tbo_tool_selector_set_selected (self, NULL);
+        tbo_window_mark_dirty (tbo);
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static void
+open_text_editor (TboToolSelector *self, TboObjectText *text)
+{
+    TboWindow *tbo = TBO_TOOL_BASE (self)->tbo;
+    TboToolText *text_tool;
+
+    tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_TEXT);
+    text_tool = TBO_TOOL_TEXT (tbo->toolbar->tools[TBO_TOOLBAR_TEXT]);
+    tbo_tool_text_set_selected (text_tool, text);
+    tbo_drawing_update (TBO_DRAWING (tbo->drawing));
 }
 
 static void
@@ -321,7 +421,7 @@ drawing (TboToolBase *tool, cairo_t *cr)
 
 /* frame view */
 static void
-frame_view_on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event)
+frame_view_on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 {
     int x, y, offset_x, offset_y;
     TboToolSelector *self = TBO_TOOL_SELECTOR (tool);
@@ -395,7 +495,7 @@ frame_view_on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event)
 }
 
 static void
-frame_view_on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
+frame_view_on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 {
     TboToolSelector *self = TBO_TOOL_SELECTOR (tool);
     int x, y;
@@ -408,6 +508,7 @@ frame_view_on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event
 
     x = (int)event->x;
     y = (int)event->y;
+    self->edit_text_on_release = FALSE;
 
     // resizing
     tbo_object_group_set_vars (self->selected_object);
@@ -453,6 +554,10 @@ frame_view_on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event
                 tbo_object_group_add (group, obj2);
                 obj2 = TBO_OBJECT_BASE (group);
             }
+
+            self->edit_text_on_release = (obj2 == self->selected_object) &&
+                                         TBO_IS_OBJECT_TEXT (obj2) &&
+                                         !(event->state & GDK_SHIFT_MASK);
             tbo_tool_selector_set_selected_obj (self, obj2);
         }
     }
@@ -487,6 +592,19 @@ frame_view_drawing (TboToolBase *tool, cairo_t *cr)
     TboToolSelector *self = TBO_TOOL_SELECTOR (tool);
     TboObjectBase *current_obj = self->selected_object;
     TboDrawing *drawing = TBO_DRAWING (tool->tbo->drawing);
+    Frame *frame = tbo_drawing_get_current_frame (drawing);
+
+    if (current_obj != NULL && !G_IS_OBJECT (current_obj))
+    {
+        self->selected_object = NULL;
+        current_obj = NULL;
+    }
+
+    if (current_obj != NULL && frame != NULL && g_list_find (frame->objects, current_obj) == NULL)
+    {
+        self->selected_object = NULL;
+        current_obj = NULL;
+    }
 
     if (current_obj != NULL)
     {
@@ -574,23 +692,20 @@ frame_view_drawing (TboToolBase *tool, cairo_t *cr)
 }
 
 static void
-frame_view_on_key (TboToolBase *tool, GtkWidget *widget, GdkEventKey *event)
+frame_view_on_key (TboToolBase *tool, GtkWidget *widget, TboKeyEvent event)
 {
     TboToolSelector *self = TBO_TOOL_SELECTOR (tool);
     TboObjectBase *current_obj = self->selected_object;
     TboDrawing *drawing = TBO_DRAWING (tool->tbo->drawing);
 
-    if (self->selected_frame != NULL && event->keyval == GDK_KEY_Escape)
+    if (self->selected_frame != NULL && event.keyval == GDK_KEY_Escape)
     {
-        tbo_tool_selector_set_selected (self, NULL);
-        tbo_drawing_set_current_frame (drawing, NULL);
-        update_menubar (tool->tbo);
-        tbo_toolbar_update (tool->tbo->toolbar);
+        tbo_window_leave_frame (tool->tbo);
     }
 
     if (current_obj != NULL)
     {
-        switch (event->keyval)
+        switch (event.keyval)
         {
             case GDK_KEY_less:
                 tbo_object_base_resize (current_obj, RESIZE_LESS);
@@ -677,7 +792,7 @@ page_view_drawing (TboToolBase *tool, cairo_t *cr)
 }
 
 static void
-page_view_on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
+page_view_on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 {
     int x, y;
     GList *frame_list;
@@ -688,7 +803,6 @@ page_view_on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
     TboWindow *tbo = tool->tbo;
     TboToolSelector *self = TBO_TOOL_SELECTOR (tool);
     Frame *selected;
-    TboDrawing *drawing = TBO_DRAWING (tool->tbo->drawing);
 
     x = (int)event->x;
     y = (int)event->y;
@@ -716,15 +830,12 @@ page_view_on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
         tbo_tool_selector_set_selected (self, NULL);
 
     // double click, frame view
-    if (selected && event->type == GDK_2BUTTON_PRESS)
+    if (selected && event->n_press == 2)
     {
-        tbo_drawing_set_current_frame (drawing, selected);
-        empty_tool_area (self);
-        tbo_tooltip_set (NULL, 0, 0, tbo);
-        // TODO add tooltip_notify
-        tbo_tooltip_set_center_timeout (_("press esc to go back"), 3000, tbo);
-        update_menubar (tbo);
-        tbo_toolbar_update (tbo->toolbar);
+        self->clicked = FALSE;
+        self->resizing = FALSE;
+        tbo_window_enter_frame (tbo, selected);
+        return;
     }
 
     self->start_x = x;
@@ -742,7 +853,7 @@ page_view_on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
 }
 
 static void
-page_view_on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event)
+page_view_on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 {
     int x, y, offset_x, offset_y;
     TboWindow *tbo = tool->tbo;
@@ -801,7 +912,7 @@ page_view_on_move (TboToolBase *tool, GtkWidget *widget, GdkEventMotion *event)
             frame = (Frame*)frame_list->data;
             x1 = frame->x + (frame->width / 2);
             y1 = frame->y + (frame->height / 2);
-            tbo_tooltip_set (_("double click here"), x1, y1, tbo);
+            tbo_tooltip_set (_("double click or press Enter"), x1, y1, tbo);
             found = TRUE;
         }
     }
@@ -823,15 +934,21 @@ tbo_tool_selector_init (TboToolSelector *self)
     self->start_m_w = 0;
     self->start_m_h = 0;
     self->clicked = FALSE;
+    self->edit_text_on_release = FALSE;
     self->over_resizer = FALSE;
     self->over_rotater = FALSE;
     self->resizing = FALSE;
     self->rotating = FALSE;
+    self->toolarea_widget = NULL;
     self->spin_w = NULL;
     self->spin_h = NULL;
     self->spin_x = NULL;
     self->spin_y = NULL;
+    self->color_button = NULL;
+    self->border_button = NULL;
 
+    self->parent_instance.on_select = on_select;
+    self->parent_instance.on_unselect = on_unselect;
     self->parent_instance.on_move = on_move;
     self->parent_instance.on_click = on_click;
     self->parent_instance.on_release = on_release;
@@ -842,12 +959,26 @@ tbo_tool_selector_init (TboToolSelector *self)
 static void
 tbo_tool_selector_class_init (TboToolSelectorClass *klass)
 {
+    GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
+
+    gobject_class->finalize = finalize;
+}
+
+static void
+finalize (GObject *object)
+{
+    TboToolSelector *self = TBO_TOOL_SELECTOR (object);
+
+    if (self->toolarea_widget != NULL)
+        g_object_unref (self->toolarea_widget);
+
+    G_OBJECT_CLASS (tbo_tool_selector_parent_class)->finalize (object);
 }
 
 /* object functions */
 
 GObject *
-tbo_tool_selector_new ()
+tbo_tool_selector_new (void)
 {
     GObject *tbo_tool;
     tbo_tool = g_object_new (TBO_TYPE_TOOL_SELECTOR, NULL);
@@ -880,8 +1011,13 @@ tbo_tool_selector_get_selected_obj (TboToolSelector *self)
 void
 tbo_tool_selector_set_selected (TboToolSelector *self, Frame *frame)
 {
+    if (self->selected_frame == frame)
+    {
+        update_menubar (TBO_TOOL_BASE (self)->tbo);
+        return;
+    }
+
     self->selected_frame = frame;
-    empty_tool_area (self);
     if (self->selected_frame != NULL)
         update_tool_area (self);
     update_menubar (TBO_TOOL_BASE (self)->tbo);
@@ -894,10 +1030,17 @@ tbo_tool_selector_set_selected_obj (TboToolSelector *self, TboObjectBase *obj)
     {
         TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (self)->tbo->drawing);
         Frame *frame = tbo_drawing_get_current_frame (drawing);
-        tbo_frame_del_obj (frame, self->selected_object);
+        if (frame != NULL && g_list_find (frame->objects, self->selected_object) != NULL)
+            tbo_frame_del_obj (frame, self->selected_object);
     }
     self->selected_object = obj;
     update_menubar (TBO_TOOL_BASE (self)->tbo);
+}
+
+gboolean
+tbo_tool_selector_delete_selected (TboToolSelector *self)
+{
+    return delete_selected (self);
 }
 
 

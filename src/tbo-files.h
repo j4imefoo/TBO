@@ -22,10 +22,10 @@
 
 #include <glib.h>
 
-char **tbo_files_get_dirs ();
+char **tbo_files_get_dirs (void);
 int tbo_files_prefix_len (char *str);
 void tbo_files_free (char **files);
-void tbo_files_expand_path (char *source, char *dest);
+gchar *tbo_files_expand_path (const gchar *source);
 gboolean tbo_files_is_svg_file (char *source);
 
 #endif

@@ -43,6 +43,7 @@ struct _TboToolText
 
     /* instance members */
     GtkWidget *font;
+    GtkWidget *font_size;
     GtkWidget *font_color;
     TboObjectText *text_selected;
     GtkTextBuffer *text_buffer;
@@ -61,11 +62,10 @@ GType tbo_tool_text_get_type (void);
 /*
  * Method definitions.
  */
-GObject * tbo_tool_text_new ();
+GObject * tbo_tool_text_new (void);
 GObject * tbo_tool_text_new_with_params (TboWindow *tbo);
 gchar * tbo_tool_text_get_pango_font (TboToolText *self);
 gchar * tbo_tool_text_get_font_name (TboToolText *self);
 void tbo_tool_text_set_selected (TboToolText *self, TboObjectText *text);
 
 #endif /* __TBO_TOOL_TEXT_H__ */
-

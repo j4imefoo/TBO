@@ -19,8 +19,10 @@
 #include <glib/gi18n.h>
 #include "frame.h"
 #include "tbo-window.h"
+#include "tbo-widget.h"
 #include "tbo-drawing.h"
 #include "tbo-object-base.h"
+#include "tbo-tool-selector.h"
 #include "tbo-tool-text.h"
 
 G_DEFINE_TYPE (TboToolText, tbo_tool_text, TBO_TYPE_TOOL_BASE);
@@ -30,26 +32,22 @@ G_DEFINE_TYPE (TboToolText, tbo_tool_text, TBO_TYPE_TOOL_BASE);
 /* Headers */
 static void on_select (TboToolBase *tool);
 static void on_unselect (TboToolBase *tool);
-static void on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event);
+static void on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
 static void drawing (TboToolBase *tool, cairo_t *cr);
+static void finalize (GObject *object);
+
+static gint tbo_tool_text_get_font_size (TboToolText *self);
+static gchar *tbo_tool_text_build_font (TboToolText *self);
+static void tbo_tool_text_sync_font_controls (TboToolText *self, const gchar *font_string);
 
 /* Definitions */
 
 /* aux */
-static gboolean
-on_tview_focus_in (GtkWidget *view, GdkEventFocus *event, TboToolText *self)
+static void
+on_tview_focus_changed (GtkWidget *view, GParamSpec *pspec, TboToolText *self)
 {
     TboWindow *tbo = TBO_TOOL_BASE (self)->tbo;
-    tbo_window_set_key_binder (tbo, FALSE);
-    return FALSE;
-}
-
-static gboolean
-on_tview_focus_out (GtkWidget *view, GdkEventFocus *event, TboToolText *self)
-{
-    TboWindow *tbo = TBO_TOOL_BASE (self)->tbo;
-    tbo_window_set_key_binder (tbo, TRUE);
-    return FALSE;
+    tbo_window_set_key_binder (tbo, !gtk_widget_has_focus (view));
 }
 
 
@@ -63,36 +61,47 @@ on_text_change (GtkTextBuffer *buf, TboToolText *self)
 
     if (self->text_selected)
     {
-        tbo_object_text_set_text (self->text_selected, gtk_text_buffer_get_text (buf, &start, &end, FALSE));
+        gchar *text = gtk_text_buffer_get_text (buf, &start, &end, FALSE);
+        tbo_object_text_set_text (self->text_selected, text);
+        g_free (text);
+        tbo_window_mark_dirty (tbo);
         tbo_drawing_update (TBO_DRAWING (tbo->drawing));
     }
     return FALSE;
 }
 
-static gboolean
-on_font_change (GtkFontButton *fbutton, TboToolText *self)
+static void
+on_font_change (GtkWidget *widget, GParamSpec *pspec, TboToolText *self)
 {
     TboWindow *tbo = TBO_TOOL_BASE (self)->tbo;
     if (self->text_selected)
     {
-        tbo_object_text_change_font (self->text_selected, tbo_tool_text_get_pango_font (self));
+        gchar *font = tbo_tool_text_build_font (self);
+        tbo_object_text_change_font (self->text_selected, font);
+        g_free (font);
+        tbo_window_mark_dirty (tbo);
         tbo_drawing_update (TBO_DRAWING (tbo->drawing));
     }
-    return FALSE;
 }
 
 static gboolean
-on_color_change (GtkColorButton *cbutton, TboToolText *self)
+on_font_size_change (GtkSpinButton *spin, TboToolText *self)
+{
+    on_font_change (NULL, NULL, self);
+    return FALSE;
+}
+
+static void
+on_color_change (GtkWidget *widget, GParamSpec *pspec, TboToolText *self)
 {
     TboWindow *tbo = TBO_TOOL_BASE (self)->tbo;
     if (self->text_selected)
     {
-        GdkColor color;
-        gtk_color_button_get_color (GTK_COLOR_BUTTON (self->font_color), &color);
-        tbo_object_text_change_color (self->text_selected, &color);
+        const GdkRGBA *color = gtk_color_dialog_button_get_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color));
+        tbo_object_text_change_color (self->text_selected, (GdkRGBA *) color);
+        tbo_window_mark_dirty (tbo);
         tbo_drawing_update (TBO_DRAWING (tbo->drawing));
     }
-    return FALSE;
 }
 
 GtkWidget *
@@ -102,42 +111,67 @@ setup_toolarea (TboToolText *self)
     GtkWidget *hbox;
     GtkWidget *font_color_label = gtk_label_new (_("Text color:"));
     GtkWidget *font_label = gtk_label_new (_("Font:"));
+    GtkWidget *font_size_label = gtk_label_new (_("Size:"));
     GtkWidget *scroll;
     GtkWidget *view;
+    GtkAdjustment *font_size_adjustment;
+    GtkFontDialog *font_dialog;
+    GtkColorDialog *color_dialog;
+    GdkRGBA default_color = { 0, 0, 0, 1 };
 
-    gtk_misc_set_alignment (GTK_MISC (font_label), 0, 0);
-    gtk_misc_set_alignment (GTK_MISC (font_color_label), 0, 0);
+    gtk_label_set_xalign (GTK_LABEL (font_label), 0.0);
+    gtk_label_set_yalign (GTK_LABEL (font_label), 0.5);
+    gtk_label_set_xalign (GTK_LABEL (font_size_label), 0.0);
+    gtk_label_set_yalign (GTK_LABEL (font_size_label), 0.5);
+    gtk_label_set_xalign (GTK_LABEL (font_color_label), 0.0);
+    gtk_label_set_yalign (GTK_LABEL (font_color_label), 0.5);
 
-    self->font = gtk_font_button_new ();
-    g_signal_connect (self->font, "font-set", G_CALLBACK (on_font_change), self);
-    self->font_color = gtk_color_button_new ();
-    g_signal_connect (self->font_color, "color-set", G_CALLBACK (on_color_change), self);
+    font_dialog = gtk_font_dialog_new ();
+    self->font = gtk_font_dialog_button_new (font_dialog);
+    gtk_font_dialog_button_set_use_size (GTK_FONT_DIALOG_BUTTON (self->font), FALSE);
+    g_signal_connect (self->font, "notify::font-desc", G_CALLBACK (on_font_change), self);
 
-    vbox = gtk_vbox_new (FALSE, 5);
+    font_size_adjustment = gtk_adjustment_new (27, 1, 300, 1, 5, 0);
+    self->font_size = gtk_spin_button_new (font_size_adjustment, 1, 0);
+    gtk_editable_set_alignment (GTK_EDITABLE (self->font_size), 0.5);
+    gtk_spin_button_set_numeric (GTK_SPIN_BUTTON (self->font_size), TRUE);
+    g_signal_connect (self->font_size, "value-changed", G_CALLBACK (on_font_size_change), self);
 
-    hbox = gtk_hbox_new (FALSE, 5);
-    gtk_box_pack_start (GTK_BOX (hbox), font_label, TRUE, TRUE, 5);
-    gtk_box_pack_start (GTK_BOX (hbox), self->font, TRUE, TRUE, 5);
-    gtk_box_pack_start (GTK_BOX (vbox), hbox, FALSE, FALSE, 5);
+    color_dialog = gtk_color_dialog_new ();
+    self->font_color = gtk_color_dialog_button_new (color_dialog);
+    g_signal_connect (self->font_color, "notify::rgba", G_CALLBACK (on_color_change), self);
+    gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color), &default_color);
 
-    hbox = gtk_hbox_new (FALSE, 5);
-    gtk_box_pack_start (GTK_BOX (hbox), font_color_label, TRUE, TRUE, 5);
-    gtk_box_pack_start (GTK_BOX (hbox), self->font_color, TRUE, TRUE, 5);
-    gtk_box_pack_start (GTK_BOX (vbox), hbox, FALSE, FALSE, 5);
+    vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 5);
 
-    scroll = gtk_scrolled_window_new (NULL, NULL);
+    hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
+    tbo_box_pack_start (hbox, font_label, TRUE, TRUE, 5);
+    tbo_box_pack_start (hbox, self->font, TRUE, TRUE, 5);
+    tbo_box_pack_start (vbox, hbox, FALSE, FALSE, 5);
+
+    hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
+    tbo_box_pack_start (hbox, font_size_label, TRUE, TRUE, 5);
+    tbo_box_pack_start (hbox, self->font_size, TRUE, TRUE, 5);
+    tbo_box_pack_start (vbox, hbox, FALSE, FALSE, 5);
+
+    hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
+    tbo_box_pack_start (hbox, font_color_label, TRUE, TRUE, 5);
+    tbo_box_pack_start (hbox, self->font_color, TRUE, TRUE, 5);
+    tbo_box_pack_start (vbox, hbox, FALSE, FALSE, 5);
+
+    tbo_tool_text_sync_font_controls (self, DEFAULT_PANGO_FONT);
+
+    scroll = gtk_scrolled_window_new ();
     gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     view = gtk_text_view_new ();
-    gtk_widget_add_events (view, GDK_FOCUS_CHANGE_MASK);
-    g_signal_connect (view, "focus-in-event", G_CALLBACK (on_tview_focus_in), self);
-    g_signal_connect (view, "focus-out-event", G_CALLBACK (on_tview_focus_out), self);
+    g_signal_connect (view, "notify::has-focus", G_CALLBACK (on_tview_focus_changed), self);
 
     gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW (view), GTK_WRAP_WORD);
     self->text_buffer = gtk_text_view_get_buffer (GTK_TEXT_VIEW (view));
     gtk_text_buffer_set_text (self->text_buffer, "", -1);
     g_signal_connect (self->text_buffer, "changed", G_CALLBACK (on_text_change), self);
-    gtk_scrolled_window_add_with_viewport (GTK_SCROLLED_WINDOW (scroll), view);
-    gtk_box_pack_start (GTK_BOX (vbox), scroll, FALSE, FALSE, 5);
+    tbo_scrolled_window_set_child (scroll, view);
+    tbo_box_pack_start (vbox, scroll, FALSE, FALSE, 5);
 
     return vbox;
 }
@@ -147,21 +181,23 @@ static void
 on_select (TboToolBase *tool)
 {
     GtkWidget *toolarea = setup_toolarea (TBO_TOOL_TEXT (tool));
-    gtk_widget_show_all (GTK_WIDGET (toolarea));
+    tbo_widget_show_all (toolarea);
     tbo_empty_tool_area (tool->tbo);
-    gtk_container_add (GTK_CONTAINER (tool->tbo->toolarea), toolarea);
+    tbo_widget_add_child (tool->tbo->toolarea, toolarea);
 }
 
 static void
 on_unselect (TboToolBase *tool)
 {
-    /* TODO remove widgets from toolarea to not destroy it */
+    TboToolText *self = TBO_TOOL_TEXT (tool);
+
+    tbo_tool_text_set_selected (self, NULL);
     tbo_empty_tool_area (tool->tbo);
     tbo_window_set_key_binder (tool->tbo, TRUE);
 }
 
 static void
-on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
+on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 {
     int x = (int)event->x;
     int y = (int)event->y;
@@ -169,9 +205,22 @@ on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
     GList *obj_list;
     TboObjectBase *obj;
     TboObjectText *text;
-    GdkColor color;
+    GdkRGBA color;
     TboToolText *self = TBO_TOOL_TEXT (tool);
     Frame *frame = tbo_drawing_get_current_frame (TBO_DRAWING (tool->tbo->drawing));
+
+    if (self->text_selected != NULL)
+    {
+        TboObjectText *current_text = g_object_ref (self->text_selected);
+        TboToolSelector *selector;
+
+        tbo_toolbar_set_selected_tool (tool->tbo->toolbar, TBO_TOOLBAR_SELECTOR);
+        selector = TBO_TOOL_SELECTOR (tool->tbo->toolbar->tools[TBO_TOOLBAR_SELECTOR]);
+        tbo_tool_selector_set_selected_obj (selector, TBO_OBJECT_BASE (current_text));
+        tbo_drawing_update (TBO_DRAWING (tool->tbo->drawing));
+        g_object_unref (current_text);
+        return;
+    }
 
     for (obj_list = g_list_first (frame->objects); obj_list; obj_list = obj_list->next)
     {
@@ -186,12 +235,19 @@ on_click (TboToolBase *tool, GtkWidget *widget, GdkEventButton *event)
     {
         x = tbo_frame_get_base_x (x);
         y = tbo_frame_get_base_y (y);
-        gtk_color_button_get_color (GTK_COLOR_BUTTON (self->font_color), &color);
+
+        if (x < 0 || y < 0 || x > frame->width || y > frame->height)
+            return;
+
+        gchar *font = tbo_tool_text_build_font (self);
+        color = *gtk_color_dialog_button_get_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color));
         text = TBO_OBJECT_TEXT (tbo_object_text_new_with_params (x, y, 100, 0,
                                                 _("Text"),
-                                                tbo_tool_text_get_pango_font (self),
+                                                font,
                                                 &color));
+        g_free (font);
         tbo_frame_add_obj (frame, TBO_OBJECT_BASE (text));
+        tbo_window_mark_dirty (tool->tbo);
     }
     tbo_tool_text_set_selected (self, text);
     tbo_drawing_update (TBO_DRAWING (tool->tbo->drawing));
@@ -228,6 +284,7 @@ static void
 tbo_tool_text_init (TboToolText *self)
 {
     self->font = NULL;
+    self->font_size = NULL;
     self->font_color = NULL;
     self->text_selected = NULL;
     self->text_buffer = NULL;
@@ -241,12 +298,21 @@ tbo_tool_text_init (TboToolText *self)
 static void
 tbo_tool_text_class_init (TboToolTextClass *klass)
 {
+    GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
+
+    gobject_class->finalize = finalize;
+}
+
+static void
+finalize (GObject *object)
+{
+    G_OBJECT_CLASS (tbo_tool_text_parent_class)->finalize (object);
 }
 
 /* object functions */
 
 GObject *
-tbo_tool_text_new ()
+tbo_tool_text_new (void)
 {
     GObject *tbo_tool;
     tbo_tool = g_object_new (TBO_TYPE_TOOL_TEXT, NULL);
@@ -267,12 +333,7 @@ tbo_tool_text_new_with_params (TboWindow *tbo)
 gchar *
 tbo_tool_text_get_pango_font (TboToolText *self)
 {
-    if (self->font)
-    {
-        return (gchar *)gtk_font_button_get_font_name (GTK_FONT_BUTTON (self->font));
-    }
-
-    return DEFAULT_PANGO_FONT;
+    return tbo_tool_text_build_font (self);
 }
 gchar *
 tbo_tool_text_get_font_name (TboToolText *self)
@@ -281,12 +342,69 @@ tbo_tool_text_get_font_name (TboToolText *self)
 
     if (self->font)
     {
-        pango_font = pango_font_description_from_string (
-                gtk_font_button_get_font_name (GTK_FONT_BUTTON (self->font)));
-        return (gchar *)pango_font_description_get_family (pango_font);
+        const PangoFontDescription *font = gtk_font_dialog_button_get_font_desc (GTK_FONT_DIALOG_BUTTON (self->font));
+        pango_font = pango_font_description_copy (font);
+        gchar *family = g_strdup (pango_font_description_get_family (pango_font));
+        pango_font_description_free (pango_font);
+        return family;
     }
 
     return NULL;
+}
+
+static gint
+tbo_tool_text_get_font_size (TboToolText *self)
+{
+    if (self->font_size)
+        return MAX (1, gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (self->font_size)));
+
+    return 27;
+}
+
+static gchar *
+tbo_tool_text_build_font (TboToolText *self)
+{
+    gchar *font_string;
+    PangoFontDescription *description;
+    gchar *result;
+
+    if (self->font)
+    {
+        const PangoFontDescription *font = gtk_font_dialog_button_get_font_desc (GTK_FONT_DIALOG_BUTTON (self->font));
+        font_string = pango_font_description_to_string (font);
+    }
+    else
+        font_string = g_strdup (DEFAULT_PANGO_FONT);
+
+    description = pango_font_description_from_string (font_string);
+    pango_font_description_set_size (description, tbo_tool_text_get_font_size (self) * PANGO_SCALE);
+    result = pango_font_description_to_string (description);
+
+    pango_font_description_free (description);
+    g_free (font_string);
+    return result;
+}
+
+static void
+tbo_tool_text_sync_font_controls (TboToolText *self, const gchar *font_string)
+{
+    PangoFontDescription *description;
+    gint size;
+
+    if (self->font == NULL || self->font_size == NULL)
+        return;
+
+    description = pango_font_description_from_string (font_string);
+    size = pango_font_description_get_size (description);
+    if (size <= 0)
+        size = 27;
+    else
+        size /= PANGO_SCALE;
+
+    gtk_font_dialog_button_set_font_desc (GTK_FONT_DIALOG_BUTTON (self->font), description);
+    gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->font_size), size);
+
+    pango_font_description_free (description);
 }
 
 void
@@ -300,13 +418,24 @@ tbo_tool_text_set_selected (TboToolText *self, TboObjectText *text)
     }
 
     if (!text) {
+        if (self->text_buffer)
+            gtk_text_buffer_set_text (self->text_buffer, "", -1);
+        if (self->font)
+            tbo_tool_text_sync_font_controls (self, DEFAULT_PANGO_FONT);
+        if (self->font_color)
+        {
+            GdkRGBA default_color = { 0, 0, 0, 1 };
+            gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color), &default_color);
+        }
         return;
     }
 
     str = tbo_object_text_get_text (text);
 
-    gtk_font_button_set_font_name (GTK_FONT_BUTTON (self->font), tbo_object_text_get_string (text));
-    gtk_color_button_set_color (GTK_COLOR_BUTTON (self->font_color), text->font_color);
+    gchar *font = tbo_object_text_get_string (text);
+    tbo_tool_text_sync_font_controls (self, font);
+    g_free (font);
+    gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color), text->font_color);
     gtk_text_buffer_set_text (self->text_buffer, str, -1);
     self->text_selected = g_object_ref (text);
 }

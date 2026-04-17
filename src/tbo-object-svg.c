@@ -24,7 +24,6 @@
 #include <cairo.h>
 #include <stdio.h>
 #include <librsvg/rsvg.h>
-#include <librsvg/rsvg-cairo.h>
 #include "tbo-types.h"
 #include "tbo-files.h"
 #include "tbo-object-svg.h"
@@ -35,59 +34,121 @@ static void draw (TboObjectBase *, Frame *, cairo_t *);
 static void save (TboObjectBase *, FILE *);
 static TboObjectBase * tclone (TboObjectBase *);
 
+static gboolean
+ensure_handle (TboObjectSvg *svg)
+{
+    GError *error = NULL;
+    gchar *path;
+
+    if (svg->handle != NULL)
+        return TRUE;
+
+    path = tbo_files_expand_path (svg->path->str);
+    svg->handle = rsvg_handle_new_from_file (path, &error);
+    if (svg->handle == NULL)
+    {
+        if (error != NULL)
+        {
+            g_warning ("%s", error->message);
+            g_error_free (error);
+        }
+        else
+        {
+            g_warning ("Couldn't load %s", path);
+        }
+        g_free (path);
+        return FALSE;
+    }
+
+    g_free (path);
+    return TRUE;
+}
+
+static gboolean
+ensure_surface (TboObjectBase *self, TboObjectSvg *svg)
+{
+    GError *error = NULL;
+    cairo_t *surface_cr;
+    gdouble width_px = 0;
+    gdouble height_px = 0;
+    RsvgRectangle viewport;
+
+    if (!ensure_handle (svg))
+        return FALSE;
+
+    if (!rsvg_handle_get_intrinsic_size_in_pixels (svg->handle, &width_px, &height_px))
+    {
+        width_px = self->width ? self->width : 128;
+        height_px = self->height ? self->height : 128;
+    }
+
+    if (!self->width)
+        self->width = ceil (width_px);
+    if (!self->height)
+        self->height = ceil (height_px);
+
+    if (self->width <= 0 || self->height <= 0)
+        return FALSE;
+
+    if (svg->surface != NULL &&
+        svg->cache_width == self->width &&
+        svg->cache_height == self->height)
+        return TRUE;
+
+    if (svg->surface != NULL)
+    {
+        cairo_surface_destroy (svg->surface);
+        svg->surface = NULL;
+    }
+
+    svg->surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
+                                               self->width,
+                                               self->height);
+    surface_cr = cairo_create (svg->surface);
+    viewport.x = 0;
+    viewport.y = 0;
+    viewport.width = self->width;
+    viewport.height = self->height;
+    rsvg_handle_render_document (svg->handle, surface_cr, &viewport, &error);
+    cairo_destroy (surface_cr);
+
+    if (error != NULL)
+    {
+        g_warning ("%s", error->message);
+        g_error_free (error);
+        cairo_surface_destroy (svg->surface);
+        svg->surface = NULL;
+        return FALSE;
+    }
+
+    svg->cache_width = self->width;
+    svg->cache_height = self->height;
+    return TRUE;
+}
+
 static void
 draw (TboObjectBase *self, Frame *frame, cairo_t *cr)
 {
-    GError *error = NULL;
-    RsvgHandle *rsvg_handle = NULL;
-    RsvgDimensionData rsvg_dimension_data;
     TboObjectSvg *svg = TBO_OBJECT_SVG (self);
-    char path[255];
 
-    tbo_files_expand_path (svg->path->str, path);
-    rsvg_handle = rsvg_handle_new_from_file (path, &error);
-    if (!rsvg_handle)
-    {
-        g_print (_("Couldn't load %s\n"), path);
+    if (!ensure_surface (self, svg))
         return;
-    }
-    if (error != NULL)
-    {
-        g_print ("%s\n", error->message);
-        g_error_free (error);
-        return;
-    }
-    else
-    {
-        rsvg_handle_get_dimensions (rsvg_handle, &rsvg_dimension_data);
-        int w = rsvg_dimension_data.width;
-        int h = rsvg_dimension_data.height;
-        if (!self->width) self->width = w;
-        if (!self->height) self->height = h;
 
-        float factorw = (float)self->width / (float)w;
-        float factorh = (float)self->height / (float)h;
+    cairo_matrix_t mx = {1, 0, 0, 1, 0, 0};
+    tbo_object_base_get_flip_matrix (self, &mx);
 
-        cairo_matrix_t mx = {1, 0, 0, 1, 0, 0};
-        tbo_object_base_get_flip_matrix (self, &mx);
+    cairo_rectangle(cr, frame->x+2, frame->y+2, frame->width-4, frame->height-4);
+    cairo_clip (cr);
+    cairo_translate (cr, frame->x+self->x, frame->y+self->y);
+    cairo_rotate (cr, self->angle);
+    cairo_transform (cr, &mx);
+    cairo_set_source_surface (cr, svg->surface, 0, 0);
+    cairo_paint (cr);
 
-        cairo_rectangle(cr, frame->x+2, frame->y+2, frame->width-4, frame->height-4);
-        cairo_clip (cr);
-        cairo_translate (cr, frame->x+self->x, frame->y+self->y);
-        cairo_rotate (cr, self->angle);
-        cairo_transform (cr, &mx);
-        cairo_scale (cr, factorw, factorh);
-
-        rsvg_handle_render_cairo (rsvg_handle, cr);
-
-        cairo_scale (cr, 1/factorw, 1/factorh);
-        cairo_transform (cr, &mx);
-        cairo_rotate (cr, -self->angle);
-        cairo_translate (cr, -(frame->x+self->x), -(frame->y+self->y));
-        cairo_reset_clip (cr);
-
-        g_object_unref (rsvg_handle);
-    }
+    cairo_transform (cr, &mx);
+    cairo_rotate (cr, -self->angle);
+    cairo_translate (cr, -(frame->x+self->x), -(frame->y+self->y));
+    cairo_reset_clip (cr);
 }
 
 static void
@@ -133,6 +194,10 @@ static void
 tbo_object_svg_init (TboObjectSvg *self)
 {
     self->path = NULL;
+    self->handle = NULL;
+    self->surface = NULL;
+    self->cache_width = 0;
+    self->cache_height = 0;
 
     self->parent_instance.draw = draw;
     self->parent_instance.save = save;
@@ -142,6 +207,10 @@ tbo_object_svg_init (TboObjectSvg *self)
 static void
 tbo_object_svg_finalize (GObject *self)
 {
+    if (TBO_OBJECT_SVG (self)->surface)
+        cairo_surface_destroy (TBO_OBJECT_SVG (self)->surface);
+    if (TBO_OBJECT_SVG (self)->handle)
+        g_object_unref (TBO_OBJECT_SVG (self)->handle);
     if (TBO_OBJECT_SVG (self)->path)
         g_string_free (TBO_OBJECT_SVG (self)->path, TRUE);
     /* Chain up to the parent class */
@@ -158,7 +227,7 @@ tbo_object_svg_class_init (TboObjectSvgClass *klass)
 /* object functions */
 
 GObject *
-tbo_object_svg_new ()
+tbo_object_svg_new (void)
 {
     GObject *tbo_object;
     TboObjectSvg *svg;

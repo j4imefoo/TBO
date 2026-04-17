@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "comic-load.h"
+#include "tbo-widget.h"
 #include "tbo-types.h"
 #include "comic.h"
 #include "page.h"
@@ -46,6 +47,25 @@ struct attr {
     void *pointer;
 };
 
+static gchar *
+get_attr_string (const gchar **attribute_names,
+                 const gchar **attribute_values,
+                 const gchar *name)
+{
+    const gchar **name_cursor = attribute_names;
+    const gchar **value_cursor = attribute_values;
+
+    while (*name_cursor)
+    {
+        if (strcmp (*name_cursor, name) == 0)
+            return g_strdup (*value_cursor);
+        name_cursor++;
+        value_cursor++;
+    }
+
+    return NULL;
+}
+
 void
 parse_attrs (struct attr attrs[],
              int attrs_size,
@@ -61,12 +81,7 @@ parse_attrs (struct attr attrs[],
         {
             if (strcmp (*name_cursor, attrs[i].name) == 0)
             {
-                if (strcmp (attrs[i].format, "%s") == 0)
-                {
-                    sprintf(attrs[i].pointer, "%s", *value_cursor);
-                }
-                else
-                    sscanf (*value_cursor, attrs[i].format, attrs[i].pointer);
+                sscanf (*value_cursor, attrs[i].format, attrs[i].pointer);
             }
         }
         name_cursor++;
@@ -128,7 +143,7 @@ create_tbo_piximage (const gchar **attribute_names, const gchar **attribute_valu
     int width=0, height=0;
     float angle=0.0;
     int flipv=0, fliph=0;
-    char path[255];
+    gchar *path = NULL;
 
     struct attr attrs[] = {
         {"x", "%d", &x},
@@ -138,10 +153,10 @@ create_tbo_piximage (const gchar **attribute_names, const gchar **attribute_valu
         {"flipv", "%d", &flipv},
         {"fliph", "%d", &fliph},
         {"angle", "%f", &angle},
-        {"path", "%s", path},
     };
 
     parse_attrs (attrs, G_N_ELEMENTS (attrs), attribute_names, attribute_values);
+    path = get_attr_string (attribute_names, attribute_values, "path");
 
     pix = TBO_OBJECT_PIXMAP (tbo_object_pixmap_new_with_params (x, y, width, height, path));
     obj = TBO_OBJECT_BASE (pix);
@@ -149,6 +164,7 @@ create_tbo_piximage (const gchar **attribute_names, const gchar **attribute_valu
     obj->flipv = flipv;
     obj->fliph = fliph;
     tbo_frame_add_obj (CURRENT_FRAME, obj);
+    g_free (path);
 }
 
 void
@@ -160,7 +176,7 @@ create_tbo_svgimage (const gchar **attribute_names, const gchar **attribute_valu
     int width=0, height=0;
     float angle=0.0;
     int flipv=0, fliph=0;
-    char path[255];
+    gchar *path = NULL;
 
     struct attr attrs[] = {
         {"x", "%d", &x},
@@ -170,10 +186,10 @@ create_tbo_svgimage (const gchar **attribute_names, const gchar **attribute_valu
         {"flipv", "%d", &flipv},
         {"fliph", "%d", &fliph},
         {"angle", "%f", &angle},
-        {"path", "%s", path},
     };
 
     parse_attrs (attrs, G_N_ELEMENTS (attrs), attribute_names, attribute_values);
+    path = get_attr_string (attribute_names, attribute_values, "path");
 
     svg = TBO_OBJECT_SVG (tbo_object_svg_new_with_params (x, y, width, height, path));
     obj = TBO_OBJECT_BASE (svg);
@@ -181,6 +197,7 @@ create_tbo_svgimage (const gchar **attribute_names, const gchar **attribute_valu
     obj->flipv = flipv;
     obj->fliph = fliph;
     tbo_frame_add_obj (CURRENT_FRAME, obj);
+    g_free (path);
 }
 
 void
@@ -188,12 +205,12 @@ create_tbo_text (const gchar **attribute_names, const gchar **attribute_values)
 {
     TboObjectText *textobj;
     TboObjectBase *obj;
-    GdkColor color;
+    GdkRGBA color;
     int x=0, y=0;
     int width=0, height=0;
     float angle=0.0;
     int flipv=0, fliph=0;
-    char font[255];
+    gchar *font = NULL;
     float r=0.0, g=0.0, b=0.0;
 
     struct attr attrs[] = {
@@ -204,16 +221,17 @@ create_tbo_text (const gchar **attribute_names, const gchar **attribute_values)
         {"flipv", "%d", &flipv},
         {"fliph", "%d", &fliph},
         {"angle", "%f", &angle},
-        {"font", "%s", font},
         {"r", "%f", &r},
         {"g", "%f", &g},
         {"b", "%f", &b},
     };
 
     parse_attrs (attrs, G_N_ELEMENTS (attrs), attribute_names, attribute_values);
-    color.red = (int)(r * COLORMAX);
-    color.green = (int)(g * COLORMAX);
-    color.blue = (int)(b * COLORMAX);
+    font = get_attr_string (attribute_names, attribute_values, "font");
+    color.red = r;
+    color.green = g;
+    color.blue = b;
+    color.alpha = 1.0;
     textobj = TBO_OBJECT_TEXT (tbo_object_text_new_with_params (x, y, width, height, "text", font, &color));
     obj = TBO_OBJECT_BASE (textobj);
     obj->angle = angle;
@@ -221,6 +239,7 @@ create_tbo_text (const gchar **attribute_names, const gchar **attribute_values)
     obj->fliph = fliph;
     CURRENT_TEXT = textobj;
     tbo_frame_add_obj (CURRENT_FRAME, obj);
+    g_free (font);
 }
 
 /* The handler functions. */
@@ -275,7 +294,7 @@ text (GMarkupParseContext *context,
         if (strlen(text3)) {
             tbo_object_text_set_text (CURRENT_TEXT, text3);
         } else {
-            tbo_frame_del_obj (CURRENT_FRAME, CURRENT_TEXT);
+            tbo_frame_del_obj (CURRENT_FRAME, TBO_OBJECT_BASE (CURRENT_TEXT));
             CURRENT_TEXT = NULL;
         }
         g_free (text2);
@@ -322,22 +341,12 @@ tbo_comic_load (char *filename)
     TITLE = g_strdup(base_name);
 
     if (g_file_get_contents (filename, &text, &length, NULL) == FALSE) {
-        GtkWidget *dialog = gtk_message_dialog_new (NULL,
-                GTK_DIALOG_MODAL,
-                GTK_MESSAGE_ERROR,
-                GTK_BUTTONS_CLOSE,
-                _("Couldn't load file"));
-        gtk_dialog_run (GTK_DIALOG (dialog));
+        tbo_alert_show (NULL, _("Couldn't load file"), NULL);
         return NULL;
     }
 
     if (g_markup_parse_context_parse (context, text, length, NULL) == FALSE) {
-        GtkWidget *dialog = gtk_message_dialog_new (NULL,
-                GTK_DIALOG_MODAL,
-                GTK_MESSAGE_ERROR,
-                GTK_BUTTONS_CLOSE,
-                _("Couldn't parse file"));
-        gtk_dialog_run (GTK_DIALOG (dialog));
+        tbo_alert_show (NULL, _("Couldn't parse file"), NULL);
         return NULL;
     }
 

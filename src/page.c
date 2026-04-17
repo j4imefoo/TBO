@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <gtk/gtk.h>
-#include <malloc.h>
+#include <stdlib.h>
 #include "comic.h"
 #include "page.h"
 #include "frame.h"

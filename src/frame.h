@@ -41,12 +41,11 @@ int tbo_frame_point_inside_obj (TboObjectBase *obj, int x, int y);
 void tbo_frame_add_obj (Frame *frame, TboObjectBase *obj);
 void tbo_frame_del_obj (Frame *frame, TboObjectBase *obj);
 void tbo_frame_get_obj_relative (TboObjectBase *obj, int *x, int *y, int *w, int *h);
-float tbo_frame_get_scale_factor ();
+float tbo_frame_get_scale_factor (void);
 int tbo_frame_get_base_y (int y);
 int tbo_frame_get_base_x (int x);
-void tbo_frame_set_color (Frame *frame, GdkColor *color);
+void tbo_frame_set_color (Frame *frame, GdkRGBA *color);
 void tbo_frame_save (Frame *frame, FILE *file);
 Frame *tbo_frame_clone (Frame *frame);
 
 #endif
-

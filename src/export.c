@@ -25,9 +25,11 @@
 #include <string.h>
 
 #include "export.h"
+#include "tbo-file-dialog.h"
 #include "tbo-drawing.h"
 #include "tbo-ui-utils.h"
 #include "tbo-types.h"
+#include "tbo-widget.h"
 
 static int LOCK = 0;
 
@@ -37,6 +39,41 @@ struct export_spin_args {
     GtkWidget *spin2;
     gdouble *scale;
 };
+
+struct export_file_args {
+    TboWindow *tbo;
+    GtkEntry *entry;
+};
+
+struct export_dialog_data {
+    GMainLoop *loop;
+    gint response;
+};
+
+static gboolean
+export_close_request_cb (GtkWindow *dialog, struct export_dialog_data *data)
+{
+    if (data->response == GTK_RESPONSE_NONE)
+        data->response = GTK_RESPONSE_CANCEL;
+    g_main_loop_quit (data->loop);
+    return TRUE;
+}
+
+static void
+export_button_cb (GtkButton *button, GtkWindow *dialog)
+{
+    struct export_dialog_data *data = g_object_get_data (G_OBJECT (dialog), "tbo-export-data");
+    gint response = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (button), "tbo-response"));
+
+    data->response = response;
+    gtk_window_close (dialog);
+}
+
+static void
+show_export_error (TboWindow *tbo, const gchar *message)
+{
+    tbo_alert_show (GTK_WINDOW (tbo->window), message, NULL);
+}
 
 static gboolean
 export_size_cb (GtkWidget *widget, struct export_spin_args *args)
@@ -62,28 +99,16 @@ export_size_cb (GtkWidget *widget, struct export_spin_args *args)
 gboolean
 filedialog_cb (GtkWidget *widget, gpointer data)
 {
-    gint response;
-    gchar *filename;
-    GtkWidget *filechooserdialog;
-    GtkEntry *entry = GTK_ENTRY (data);
+    struct export_file_args *args = data;
+    const gchar *current_text = gtk_editable_get_text (GTK_EDITABLE (args->entry));
+    gchar *filename = tbo_file_dialog_save_export (args->tbo, current_text);
 
-    filechooserdialog = gtk_file_chooser_dialog_new (_("Export as"),
-                                                     NULL,
-                                                     GTK_FILE_CHOOSER_ACTION_SAVE,
-                                                     GTK_STOCK_CANCEL,
-                                                     GTK_RESPONSE_CANCEL,
-                                                     GTK_STOCK_SAVE,
-                                                     GTK_RESPONSE_ACCEPT,
-                                                     NULL);
-    response = gtk_dialog_run (GTK_DIALOG (filechooserdialog));
-
-    if (response == GTK_RESPONSE_ACCEPT)
+    if (filename != NULL)
     {
-        filename = gtk_file_chooser_get_filename (GTK_FILE_CHOOSER (filechooserdialog));
-        gtk_entry_set_text (entry, filename);
+        gtk_editable_set_text (GTK_EDITABLE (args->entry), filename);
+        tbo_window_set_export_path (args->tbo, filename);
+        g_free (filename);
     }
-
-    gtk_widget_destroy (GTK_WIDGET (filechooserdialog));
     return FALSE;
 }
 
@@ -94,17 +119,18 @@ tbo_export (TboWindow *tbo)
     cairo_t *cr;
     gint width = tbo->comic->width;
     gint height = tbo->comic->height;
-    gchar rpath[255];
-    gchar format_pages[255];
-    gchar *filename;
+    gchar *filename = NULL;
+    gchar *base_filename = NULL;
+    gchar *format_pages = NULL;
     GList *page_list;
     gint i, n, n2;
     gint response;
     gdouble scale = 1.0;
-    gchar *export_to;
+    gchar *export_to = NULL;
     gint export_to_index;
     struct export_spin_args spin_args;
     struct export_spin_args spin_args2;
+    struct export_file_args file_args;
 
     GtkWidget *dialog;
     GtkWidget *vbox;
@@ -114,33 +140,52 @@ tbo_export (TboWindow *tbo)
     GtkWidget *filebutton;
     GtkWidget *spinw;
     GtkWidget *spinh;
-    GtkWidget *combobox;
+    GtkWidget *dropdown;
+    GtkWidget *actions;
 
     GtkWidget *button;
+    gchar *basename = NULL;
+    const char *export_formats[] = {
+        "guess by extension",
+        ".png",
+        ".pdf",
+        ".svg",
+        NULL,
+    };
 
-    dialog = gtk_dialog_new_with_buttons (_("Export as"),
-                                            GTK_WINDOW (tbo->window),
-                                            GTK_DIALOG_MODAL,
-                                            GTK_STOCK_CANCEL,
-                                            GTK_RESPONSE_CANCEL,
-                                            GTK_STOCK_SAVE,
-                                            GTK_RESPONSE_ACCEPT,
-                                            NULL);
+    struct export_dialog_data data;
 
-    button = gtk_dialog_get_widget_for_response (GTK_DIALOG (dialog), GTK_RESPONSE_ACCEPT);
-    gtk_widget_grab_focus (GTK_WIDGET (button));
+    dialog = gtk_window_new ();
+    gtk_window_set_title (GTK_WINDOW (dialog), _("Export as"));
+    gtk_window_set_transient_for (GTK_WINDOW (dialog), GTK_WINDOW (tbo->window));
+    gtk_window_set_modal (GTK_WINDOW (dialog), TRUE);
+    gtk_window_set_default_size (GTK_WINDOW (dialog), 420, -1);
 
-    filebutton = gtk_button_new_from_stock (GTK_STOCK_OPEN);
-    vbox = gtk_dialog_get_content_area (GTK_DIALOG (dialog));
+    filebutton = gtk_button_new_with_label (_("Choose file"));
+    vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_margin_start (vbox, 12);
+    gtk_widget_set_margin_end (vbox, 12);
+    gtk_widget_set_margin_top (vbox, 12);
+    gtk_widget_set_margin_bottom (vbox, 12);
+    tbo_widget_add_child (dialog, vbox);
 
-    hbox = gtk_hbox_new (FALSE, 5);
+    hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
     filelabel = gtk_label_new (_("Filename: "));
     fileinput = gtk_entry_new ();
-    gtk_entry_set_text (GTK_ENTRY (fileinput), tbo->comic->title);
-    gtk_container_add (GTK_CONTAINER (hbox), filelabel);
-    gtk_container_add (GTK_CONTAINER (hbox), fileinput);
-    gtk_container_add (GTK_CONTAINER (hbox), filebutton);
-    gtk_container_add (GTK_CONTAINER (vbox), hbox);
+    if (tbo->export_path != NULL)
+    {
+        basename = g_path_get_basename (tbo->export_path);
+        gtk_editable_set_text (GTK_EDITABLE (fileinput), basename);
+        g_free (basename);
+    }
+    else
+    {
+        gtk_editable_set_text (GTK_EDITABLE (fileinput), tbo->comic->title);
+    }
+    tbo_widget_add_child (hbox, filelabel);
+    tbo_widget_add_child (hbox, fileinput);
+    tbo_widget_add_child (hbox, filebutton);
+    tbo_widget_add_child (vbox, hbox);
 
     spinw = add_spin_with_label (vbox, _("width: "), tbo->comic->width);
     spinh = add_spin_with_label (vbox, _("height: "), tbo->comic->height);
@@ -157,73 +202,122 @@ tbo_export (TboWindow *tbo)
     spin_args2.scale = &scale;
     g_signal_connect (spinh, "value-changed", G_CALLBACK (export_size_cb), &spin_args2);
 
-    combobox = gtk_combo_box_text_new ();
-    gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combobox), _("guess by extension"));
-    gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combobox), ".png");
-    gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combobox), ".pdf");
-    gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combobox), ".svg");
-    gtk_combo_box_set_active (GTK_COMBO_BOX (combobox), 0);
-    gtk_container_add (GTK_CONTAINER (vbox), combobox);
+    dropdown = gtk_drop_down_new_from_strings (export_formats);
+    gtk_drop_down_set_selected (GTK_DROP_DOWN (dropdown), 0);
+    tbo_widget_add_child (vbox, dropdown);
 
-    gtk_widget_show_all (GTK_WIDGET (vbox));
+    actions = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_halign (actions, GTK_ALIGN_END);
 
-    g_signal_connect (filebutton, "clicked", G_CALLBACK (filedialog_cb), fileinput);
+    button = gtk_button_new_with_mnemonic (_("_Cancel"));
+    g_object_set_data (G_OBJECT (button), "tbo-response", GINT_TO_POINTER (GTK_RESPONSE_CANCEL));
+    g_signal_connect (button, "clicked", G_CALLBACK (export_button_cb), dialog);
+    tbo_widget_add_child (actions, button);
 
-    response = gtk_dialog_run (GTK_DIALOG (dialog));
+    button = gtk_button_new_with_mnemonic (_("_Save"));
+    gtk_widget_add_css_class (button, "suggested-action");
+    g_object_set_data (G_OBJECT (button), "tbo-response", GINT_TO_POINTER (GTK_RESPONSE_ACCEPT));
+    g_signal_connect (button, "clicked", G_CALLBACK (export_button_cb), dialog);
+    tbo_widget_add_child (actions, button);
+
+    tbo_widget_add_child (vbox, actions);
+
+    tbo_widget_show_all (GTK_WIDGET (vbox));
+
+    file_args.tbo = tbo;
+    file_args.entry = GTK_ENTRY (fileinput);
+    g_signal_connect (filebutton, "clicked", G_CALLBACK (filedialog_cb), &file_args);
+
+    data.loop = g_main_loop_new (NULL, FALSE);
+    data.response = GTK_RESPONSE_NONE;
+    g_object_set_data (G_OBJECT (dialog), "tbo-export-data", &data);
+    g_signal_connect (dialog, "close-request", G_CALLBACK (export_close_request_cb), &data);
+    gtk_window_present (GTK_WINDOW (dialog));
+    g_main_loop_run (data.loop);
+
+    response = data.response;
 
     if (response == GTK_RESPONSE_ACCEPT)
     {
         width = (gint) (width * scale);
         height = (gint) (height * scale);
 
-        filename = (gchar *)gtk_entry_get_text (GTK_ENTRY (fileinput));
+        filename = g_strdup (gtk_editable_get_text (GTK_EDITABLE (fileinput)));
+        if (filename == NULL || *filename == '\0')
+        {
+            show_export_error (tbo, _("Please choose a filename to export."));
+            g_free (filename);
+            gtk_window_destroy (GTK_WINDOW (dialog));
+            return FALSE;
+        }
+
+        tbo_window_set_export_path (tbo, filename);
         /* 0 guess, 1 png, 2 pdf, 3 svg */
-        export_to_index = gtk_combo_box_get_active (GTK_COMBO_BOX (combobox));
+        export_to_index = gtk_drop_down_get_selected (GTK_DROP_DOWN (dropdown));
 
         switch (export_to_index)
         {
             case 0:
-                //guess
-                if (strlen (filename) > 4)
+            {
+                gchar *dot = strrchr (filename, '.');
+
+                if (dot != NULL && dot[1] != '\0')
                 {
-                    export_to = filename + strlen (filename) - 3;
-                    filename = g_strndup (filename, strlen(filename) - 4);
+                    export_to = g_ascii_strdown (dot + 1, -1);
+                    base_filename = g_strndup (filename, dot - filename);
                 }
                 else
                 {
-                    filename = g_strdup (filename);
-                    export_to = "png";
+                    base_filename = g_strdup (filename);
+                    export_to = g_strdup ("png");
                 }
                 break;
+            }
             case 1:
-                export_to = "png";
+                export_to = g_strdup ("png");
+                base_filename = g_strdup (filename);
                 break;
             case 2:
-                export_to = "pdf";
+                export_to = g_strdup ("pdf");
+                base_filename = g_strdup (filename);
                 break;
             case 3:
-                export_to = "svg";
+                export_to = g_strdup ("svg");
+                base_filename = g_strdup (filename);
                 break;
             default:
-                export_to = "png";
+                export_to = g_strdup ("png");
+                base_filename = g_strdup (filename);
                 break;
+        }
+
+        if (g_strcmp0 (export_to, "png") != 0 &&
+            g_strcmp0 (export_to, "pdf") != 0 &&
+            g_strcmp0 (export_to, "svg") != 0)
+        {
+            g_free (export_to);
+            export_to = g_strdup ("png");
         }
 
         n = g_list_length (tbo->comic->pages);
         n2 = n;
         for (i=0; n; n=n/10, i++);
-        snprintf (format_pages, 255, "%%s%%0%dd.%%s", i);
+        format_pages = g_strdup_printf ("%%s%%0%dd.%%s", i);
         for (i=0, page_list = g_list_first (tbo->comic->pages); page_list; i++, page_list = page_list->next)
         {
-            snprintf (rpath, 255, format_pages, filename, i, export_to);
+            gchar *rpath = g_strdup_printf (format_pages, base_filename, i, export_to);
             if (n2 == 1)
-                snprintf (rpath, 255, "%s.%s", filename, export_to);
+            {
+                g_free (rpath);
+                rpath = g_strdup_printf ("%s.%s", base_filename, export_to);
+            }
             // PDF
             if (strcmp (export_to, "pdf") == 0)
             {
                 if (!surface)
                 {
-                    snprintf (rpath, 255, "%s.%s", filename, export_to);
+                    g_free (rpath);
+                    rpath = g_strdup_printf ("%s.%s", base_filename, export_to);
                     surface = cairo_pdf_surface_create (rpath, width, height);
                     cr = cairo_create (surface);
                 }
@@ -249,7 +343,11 @@ tbo_export (TboWindow *tbo)
             if (strcmp (export_to, "pdf") == 0)
                 cairo_show_page (cr);
             else if (strcmp (export_to, "png") == 0)
-                cairo_surface_write_to_png (surface, rpath);
+            {
+                cairo_status_t status = cairo_surface_write_to_png (surface, rpath);
+                if (status != CAIRO_STATUS_SUCCESS)
+                    show_export_error (tbo, cairo_status_to_string (status));
+            }
 
             cairo_scale (cr, 1/scale, 1/scale);
 
@@ -260,6 +358,8 @@ tbo_export (TboWindow *tbo)
                 cairo_destroy (cr);
                 surface = NULL;
             }
+
+            g_free (rpath);
         }
 
         if (surface)
@@ -268,10 +368,14 @@ tbo_export (TboWindow *tbo)
             cairo_destroy (cr);
         }
     }
-    if (!export_to_index)
-        g_free (filename);
 
-    gtk_widget_destroy (GTK_WIDGET (dialog));
+    g_free (format_pages);
+    g_free (base_filename);
+    g_free (export_to);
+    g_free (filename);
+
+    gtk_window_destroy (GTK_WINDOW (dialog));
+    g_main_loop_unref (data.loop);
 
     return FALSE;
 }
