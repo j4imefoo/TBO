@@ -24,6 +24,7 @@ conf.set_quoted('GETTEXT_PACKAGE', 'tbo')
 conf.set_quoted('VERSION', meson.project_version())
 conf.set10('ENABLE_NLS', true)
 configure_file(output: 'config.h', configuration: conf)
+configured_icon_png = configure_file(input: 'data/icon.png', output: 'tbo.png', copy: true)
 
 add_project_arguments(
   '-DG_LOG_DOMAIN="tbo"',
@@ -151,3 +152,5 @@ install_subdir('data/doodle', install_dir: join_paths(get_option('datadir'), 'tb
 
 install_data('data/applications/net.danigm.tbo.desktop', install_dir: join_paths(get_option('datadir'), 'applications'))
 install_data('data/tbo.svg', install_dir: join_paths(get_option('datadir'), 'pixmaps'))
+install_data('data/tbo.svg', install_dir: join_paths(get_option('datadir'), 'icons', 'hicolor', 'scalable', 'apps'))
+install_data(configured_icon_png, install_dir: join_paths(get_option('datadir'), 'icons', 'hicolor', '128x128', 'apps'))
