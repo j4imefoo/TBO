@@ -1,4 +1,4 @@
-tbo (1.0-1) unstable; urgency=medium
+tbo (2.0) unstable; urgency=medium
 
   * Repackage project on top of Meson and GTK4.
 

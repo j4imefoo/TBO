@@ -11,7 +11,8 @@ Build-Depends:
  libcairo2-dev,
  librsvg2-dev,
  desktop-file-utils,
- xvfb
+ xvfb,
+ xauth
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
 Homepage: https://github.com/j4imefoo/TBO
