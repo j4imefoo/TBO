@@ -55,6 +55,7 @@ struct _TboToolSelector
     gint start_m_y;
     gint start_m_w;
     gint start_m_h;
+    gdouble start_m_angle;
     gboolean clicked;
     gboolean edit_text_on_release;
     gboolean over_resizer;
@@ -87,6 +88,7 @@ Frame * tbo_tool_selector_get_selected_frame (TboToolSelector *self);
 TboObjectBase * tbo_tool_selector_get_selected_obj (TboToolSelector *self);
 void tbo_tool_selector_set_selected (TboToolSelector *self, Frame *frame);
 void tbo_tool_selector_set_selected_obj (TboToolSelector *self, TboObjectBase *obj);
+void tbo_tool_selector_reset_state (TboToolSelector *self);
 gboolean tbo_tool_selector_delete_selected (TboToolSelector *self);
 GObject * tbo_tool_selector_new (void);
 GObject * tbo_tool_selector_new_with_params (TboWindow *tbo);
@@ -95,11 +97,14 @@ GObject * tbo_tool_selector_new_with_params (TboWindow *tbo);
  * TboActionFrameMove for undo and redo frame movements
  */
 typedef struct _TboActionFrameMove TboActionFrameMove;
+typedef struct _TboActionFrameTransform TboActionFrameTransform;
 typedef struct _TboActionObjMove TboActionObjMove;
+typedef struct _TboActionObjTransform TboActionObjTransform;
 
 struct _TboActionFrameMove {
     void (*action_do) (TboAction *action);
     void (*action_undo) (TboAction *action);
+    void (*action_free) (TboAction *action);
     Frame *frame;
     int x1;
     int y1;
@@ -108,9 +113,34 @@ struct _TboActionFrameMove {
 };
 TboAction * tbo_action_frame_move_new (Frame *frame, int x1, int y1, int x2, int y2);
 
+struct _TboActionFrameTransform {
+    void (*action_do) (TboAction *action);
+    void (*action_undo) (TboAction *action);
+    void (*action_free) (TboAction *action);
+    Frame *frame;
+    int x1;
+    int y1;
+    int width1;
+    int height1;
+    int x2;
+    int y2;
+    int width2;
+    int height2;
+};
+TboAction * tbo_action_frame_transform_new (Frame *frame,
+                                            int x1,
+                                            int y1,
+                                            int width1,
+                                            int height1,
+                                            int x2,
+                                            int y2,
+                                            int width2,
+                                            int height2);
+
 struct _TboActionObjMove {
     void (*action_do) (TboAction *action);
     void (*action_undo) (TboAction *action);
+    void (*action_free) (TboAction *action);
     TboObjectBase *obj;
     int x1;
     int y1;
@@ -118,6 +148,34 @@ struct _TboActionObjMove {
     int y2;
 };
 TboAction * tbo_action_object_move_new (TboObjectBase *object, int x1, int y1, int x2, int y2);
+
+struct _TboActionObjTransform {
+    void (*action_do) (TboAction *action);
+    void (*action_undo) (TboAction *action);
+    void (*action_free) (TboAction *action);
+    TboObjectBase *obj;
+    int x1;
+    int y1;
+    int width1;
+    int height1;
+    gdouble angle1;
+    int x2;
+    int y2;
+    int width2;
+    int height2;
+    gdouble angle2;
+};
+TboAction * tbo_action_object_transform_new (TboObjectBase *object,
+                                             int x1,
+                                             int y1,
+                                             int width1,
+                                             int height1,
+                                             gdouble angle1,
+                                             int x2,
+                                             int y2,
+                                             int width2,
+                                             int height2,
+                                             gdouble angle2);
 
 
 #endif /* __TBO_TOOL_SELECTOR_H__ */

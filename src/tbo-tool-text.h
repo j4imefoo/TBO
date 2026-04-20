@@ -47,6 +47,12 @@ struct _TboToolText
     GtkWidget *font_color;
     TboObjectText *text_selected;
     GtkTextBuffer *text_buffer;
+    gboolean syncing_controls;
+    gboolean text_capture_active;
+    guint pending_text_change_id;
+    gchar *captured_text;
+    gchar *captured_font;
+    GdkRGBA captured_color;
 };
 
 struct _TboToolTextClass
@@ -67,5 +73,6 @@ GObject * tbo_tool_text_new_with_params (TboWindow *tbo);
 gchar * tbo_tool_text_get_pango_font (TboToolText *self);
 gchar * tbo_tool_text_get_font_name (TboToolText *self);
 void tbo_tool_text_set_selected (TboToolText *self, TboObjectText *text);
+void tbo_tool_text_reset_state (TboToolText *self);
 
 #endif /* __TBO_TOOL_TEXT_H__ */

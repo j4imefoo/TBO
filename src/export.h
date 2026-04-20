@@ -25,5 +25,10 @@
 #include "tbo-window.h"
 
 gboolean tbo_export (TboWindow *tbo);
+gboolean tbo_export_file (TboWindow *tbo,
+                          const gchar *filename,
+                          const gchar *format_hint,
+                          gint width,
+                          gint height);
 
 #endif

@@ -50,7 +50,7 @@ void tbo_window_free (TboWindow *tbo);
 gboolean tbo_window_free_cb (GtkWidget *widget, GdkEvent *event, TboWindow *tbo);
 gboolean tbo_window_close_request_cb (GtkWindow *window, TboWindow *tbo);
 TboWindow * tbo_new_tbo (GtkApplication *app, int width, int height);
-void tbo_window_update_status (TboWindow *tbo, int x, int y);
+void tbo_window_refresh_status (TboWindow *tbo);
 void tbo_empty_tool_area (TboWindow *tbo);
 void tbo_window_set_path (TboWindow *tbo, const gchar *path);
 void tbo_window_set_browse_path (TboWindow *tbo, const gchar *path);
@@ -68,6 +68,7 @@ GtkWidget *create_darea (TboWindow *tbo);
 void tbo_window_set_key_binder (TboWindow *tbo, gboolean keyb);
 void tbo_window_enter_frame (TboWindow *tbo, Frame *frame);
 void tbo_window_leave_frame (TboWindow *tbo);
+void tbo_window_reset_document_state (TboWindow *tbo);
 gboolean tbo_window_undo_cb (GtkWidget *widget, TboWindow *tbo);
 gboolean tbo_window_redo_cb (GtkWidget *widget, TboWindow *tbo);
 

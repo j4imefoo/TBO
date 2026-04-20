@@ -33,6 +33,57 @@
 
 G_DEFINE_TYPE (TboDrawing, tbo_drawing, GTK_TYPE_DRAWING_AREA);
 
+static void tbo_drawing_set_window_pointer (TboDrawing *self, TboWindow *tbo);
+static void tbo_drawing_set_comic_pointer (TboDrawing *self, Comic *comic);
+
+static void
+tbo_drawing_set_current_frame_pointer (TboDrawing *self, Frame *frame)
+{
+    if (self->current_frame == frame)
+        return;
+
+    if (self->current_frame != NULL)
+    {
+        g_object_remove_weak_pointer (G_OBJECT (self->current_frame),
+                                      (gpointer *) &self->current_frame);
+    }
+
+    self->current_frame = frame;
+
+    if (self->current_frame != NULL)
+    {
+        g_object_add_weak_pointer (G_OBJECT (self->current_frame),
+                                   (gpointer *) &self->current_frame);
+    }
+}
+
+static void
+tbo_drawing_set_window_pointer (TboDrawing *self, TboWindow *tbo)
+{
+    self->tbo = tbo;
+}
+
+static void
+tbo_drawing_set_comic_pointer (TboDrawing *self, Comic *comic)
+{
+    if (self->comic == comic)
+        return;
+
+    if (self->comic != NULL)
+    {
+        g_object_remove_weak_pointer (G_OBJECT (self->comic),
+                                      (gpointer *) &self->comic);
+    }
+
+    self->comic = comic;
+
+    if (self->comic != NULL)
+    {
+        g_object_add_weak_pointer (G_OBJECT (self->comic),
+                                   (gpointer *) &self->comic);
+    }
+}
+
 static gboolean
 queue_redraw_cb (gpointer data)
 {
@@ -73,7 +124,7 @@ draw_func (GtkDrawingArea *area, cairo_t *cr, gint width, gint height, gpointer 
 
     tbo_drawing_draw (TBO_DRAWING (area), cr);
 
-    tbo_tooltip_draw (cr);
+    tbo_tooltip_draw (cr, self);
 
     // Update drawing helpers
     if (self->tool)
@@ -146,6 +197,12 @@ tbo_drawing_init (TboDrawing *self)
     self->current_frame = NULL;
     self->zoom = 1;
     self->comic = NULL;
+    self->tbo = NULL;
+    self->tooltip = NULL;
+    self->tooltip_x = 0;
+    self->tooltip_y = 0;
+    self->tooltip_alpha = 0.0;
+    self->tooltip_timeout_id = 0;
     self->tool = NULL;
     self->redraw_source_id = 0;
     gtk_widget_set_focusable (GTK_WIDGET (self), TRUE);
@@ -165,8 +222,19 @@ tbo_drawing_init (TboDrawing *self)
 static void
 tbo_drawing_finalize (GObject *self)
 {
-    if (TBO_DRAWING (self)->redraw_source_id != 0)
-        g_source_remove (TBO_DRAWING (self)->redraw_source_id);
+    TboDrawing *drawing = TBO_DRAWING (self);
+
+    if (drawing->redraw_source_id != 0)
+        g_source_remove (drawing->redraw_source_id);
+
+    if (drawing->tooltip_timeout_id != 0)
+        g_source_remove (drawing->tooltip_timeout_id);
+    if (drawing->tooltip != NULL)
+        g_string_free (drawing->tooltip, TRUE);
+
+    tbo_drawing_set_window_pointer (drawing, NULL);
+    tbo_drawing_set_comic_pointer (drawing, NULL);
+    tbo_drawing_set_current_frame_pointer (drawing, NULL);
 
     /* Chain up to the parent class */
     G_OBJECT_CLASS (tbo_drawing_parent_class)->finalize (self);
@@ -194,10 +262,24 @@ GtkWidget *
 tbo_drawing_new_with_params (Comic *comic)
 {
     GtkWidget *drawing = tbo_drawing_new ();
-    TBO_DRAWING (drawing)->comic = comic;
-    gtk_widget_set_size_request (drawing, comic->width + 2, comic->height + 2);
+    tbo_drawing_set_comic (TBO_DRAWING (drawing), comic);
+    gtk_widget_set_size_request (drawing,
+                                 tbo_comic_get_width (comic) + 2,
+                                 tbo_comic_get_height (comic) + 2);
 
     return drawing;
+}
+
+void
+tbo_drawing_set_comic (TboDrawing *self, Comic *comic)
+{
+    tbo_drawing_set_comic_pointer (self, comic);
+}
+
+Comic *
+tbo_drawing_get_comic (TboDrawing *self)
+{
+    return self->comic;
 }
 
 void
@@ -215,7 +297,7 @@ tbo_drawing_update (TboDrawing *self)
 void
 tbo_drawing_set_current_frame (TboDrawing *self, Frame *frame)
 {
-    self->current_frame = frame;
+    tbo_drawing_set_current_frame_pointer (self, frame);
 }
 
 Frame *
@@ -233,8 +315,11 @@ tbo_drawing_draw (TboDrawing *self, cairo_t *cr)
 
     int w, h;
 
-    w = self->comic->width;
-    h = self->comic->height;
+    if (self->comic == NULL)
+        return;
+
+    w = tbo_comic_get_width (self->comic);
+    h = tbo_comic_get_height (self->comic);
     // white background
     if (tbo_drawing_get_current_frame (self))
         cairo_set_source_rgb(cr, 0, 0, 0);
@@ -311,8 +396,8 @@ tbo_drawing_zoom_fit (TboDrawing *self)
 
     get_view_size (self, &w, &h);
 
-    z1 = fabs ((float)w / (float)self->comic->width);
-    z2 = fabs ((float)h / (float)self->comic->height);
+    z1 = fabs ((float)w / (float)tbo_comic_get_width (self->comic));
+    z2 = fabs ((float)h / (float)tbo_comic_get_height (self->comic));
     self->zoom = z1 < z2 ? z1 : z2;
     tbo_drawing_adjust_scroll (self);
 }
@@ -332,8 +417,8 @@ tbo_drawing_adjust_scroll (TboDrawing *self)
     if (!self->comic)
         return;
 
-    width = MAX (1, ceil (self->comic->width * self->zoom));
-    height = MAX (1, ceil (self->comic->height * self->zoom));
+    width = MAX (1, ceil (tbo_comic_get_width (self->comic) * self->zoom));
+    height = MAX (1, ceil (tbo_comic_get_height (self->comic) * self->zoom));
     gtk_widget_set_size_request (GTK_WIDGET (self), width, height);
     tbo_drawing_update (self);
 }
@@ -341,5 +426,6 @@ tbo_drawing_adjust_scroll (TboDrawing *self)
 void
 tbo_drawing_init_dnd (TboDrawing *self, TboWindow *tbo)
 {
+    tbo_drawing_set_window_pointer (self, tbo);
     tbo_dnd_setup_drawing_dest (self, tbo);
 }

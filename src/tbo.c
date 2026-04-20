@@ -23,6 +23,7 @@
 
 #include "tbo-window.h"
 #include "comic.h"
+#include "tbo-utils.h"
 
 static void
 present_window (TboWindow *tbo)
@@ -74,13 +75,7 @@ int main (int argc, char**argv){
     int status;
 
     g_set_application_name ("TBO");
-
-#ifdef ENABLE_NLS
-    /* Initialize the i18n stuff */
-    bindtextdomain (GETTEXT_PACKAGE, GNOMELOCALEDIR);
-    bind_textdomain_codeset (GETTEXT_PACKAGE, "UTF-8");
-    textdomain (GETTEXT_PACKAGE);
-#endif
+    tbo_init_i18n ();
 
     app = gtk_application_new ("net.danigm.tbo", G_APPLICATION_HANDLES_OPEN);
     g_signal_connect (app, "activate", G_CALLBACK (activate_cb), NULL);

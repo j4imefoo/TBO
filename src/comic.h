@@ -20,13 +20,30 @@
 #ifndef __TBO_COMIC__
 #define __TBO_COMIC__
 
+#include <glib-object.h>
 #include <gtk/gtk.h>
 #include "tbo-types.h"
 #include "tbo-window.h"
 
+#define TBO_TYPE_COMIC            (tbo_comic_get_type ())
+#define TBO_COMIC(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), TBO_TYPE_COMIC, Comic))
+#define TBO_IS_COMIC(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), TBO_TYPE_COMIC))
+#define TBO_COMIC_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), TBO_TYPE_COMIC, ComicClass))
+#define TBO_IS_COMIC_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), TBO_TYPE_COMIC))
+#define TBO_COMIC_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), TBO_TYPE_COMIC, ComicClass))
+
+typedef struct _ComicClass ComicClass;
+
+GType tbo_comic_get_type (void);
+
 Comic *tbo_comic_new (const char *title, int width, int height);
 void tbo_comic_free (Comic *comic);
+const gchar *tbo_comic_get_title (Comic *comic);
+gint tbo_comic_get_width (Comic *comic);
+gint tbo_comic_get_height (Comic *comic);
+GList *tbo_comic_get_pages (Comic *comic);
 Page *tbo_comic_new_page (Comic *comic);
+void tbo_comic_insert_page (Comic *comic, Page *page, int nth);
 void tbo_comic_del_page (Comic *comic, int nth);
 gboolean tbo_comic_del_current_page (Comic *comic);
 int tbo_comic_len (Comic *comic);

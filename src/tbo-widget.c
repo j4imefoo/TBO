@@ -10,6 +10,8 @@
 
 #include "tbo-widget.h"
 
+#define TBO_DIALOG_RUN_DATA_KEY "tbo-dialog-run-data"
+
 struct alert_run_data {
     GMainLoop *loop;
     gint response;
@@ -141,6 +143,56 @@ void
 tbo_scrolled_window_set_child (GtkWidget *scrolled, GtkWidget *child)
 {
     gtk_scrolled_window_set_child (GTK_SCROLLED_WINDOW (scrolled), child);
+}
+
+void
+tbo_dialog_run_data_init (TboDialogRunData *data, gint close_response)
+{
+    data->loop = g_main_loop_new (NULL, FALSE);
+    data->response = GTK_RESPONSE_NONE;
+    data->close_response = close_response;
+}
+
+void
+tbo_dialog_run_data_clear (TboDialogRunData *data)
+{
+    if (data->loop != NULL)
+    {
+        g_main_loop_unref (data->loop);
+        data->loop = NULL;
+    }
+}
+
+gboolean
+tbo_dialog_close_request_cb (GtkWindow *dialog, TboDialogRunData *data)
+{
+    if (data->response == GTK_RESPONSE_NONE)
+        data->response = data->close_response;
+
+    g_main_loop_quit (data->loop);
+    return TRUE;
+}
+
+void
+tbo_dialog_button_cb (GtkButton *button, GtkWindow *dialog)
+{
+    TboDialogRunData *data = g_object_get_data (G_OBJECT (dialog), TBO_DIALOG_RUN_DATA_KEY);
+    gint response = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (button), "tbo-response"));
+
+    if (data != NULL)
+        data->response = response;
+
+    gtk_window_close (dialog);
+}
+
+gint
+tbo_dialog_run (GtkWindow *dialog, TboDialogRunData *data)
+{
+    g_object_set_data (G_OBJECT (dialog), TBO_DIALOG_RUN_DATA_KEY, data);
+    tbo_widget_show_all (GTK_WIDGET (dialog));
+    gtk_window_present (dialog);
+    g_main_loop_run (data->loop);
+    return data->response;
 }
 
 gint

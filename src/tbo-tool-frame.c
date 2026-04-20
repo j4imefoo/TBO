@@ -23,6 +23,7 @@
 #include "comic.h"
 #include "tbo-tool-frame.h"
 #include "tbo-drawing.h"
+#include "tbo-undo.h"
 
 G_DEFINE_TYPE (TboToolFrame, tbo_tool_frame, TBO_TYPE_TOOL_BASE);
 
@@ -33,6 +34,7 @@ static void on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *even
 static void on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
 static void on_release (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event);
 static void drawing (TboToolBase *tool, cairo_t *cr);
+static void finalize (GObject *object);
 
 /* Definitions */
 
@@ -57,10 +59,11 @@ on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
         {
             x = (int)event->x;
             y = (int)event->y;
-            self->tmp_frame->width = (int)fabs (x - self->n_frame_x);
-            self->tmp_frame->height = (int)fabs (y - self->n_frame_y);
-            self->tmp_frame->x = MINIMUM (self->n_frame_x, x);
-            self->tmp_frame->y = MINIMUM (self->n_frame_y, y);
+            tbo_frame_set_bounds (self->tmp_frame,
+                                  MINIMUM (self->n_frame_x, x),
+                                  MINIMUM (self->n_frame_y, y),
+                                  (int)fabs (x - self->n_frame_x),
+                                  (int)fabs (y - self->n_frame_y));
         }
     }
     tbo_drawing_update (TBO_DRAWING (tool->tbo->drawing));
@@ -86,10 +89,14 @@ on_release (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
 
     if (w != 0 && h != 0)
     {
-        tbo_page_new_frame (tbo_comic_get_current_page (tbo->comic),
+        Page *page = tbo_comic_get_current_page (tbo->comic);
+        Frame *frame = tbo_page_new_frame (page,
                 MINIMUM (self->n_frame_x, event->x), MINIMUM (self->n_frame_y, event->y),
                 w, h);
+        tbo_undo_stack_insert (tbo->undo_stack, tbo_action_frame_add_new (page, frame));
         tbo_window_mark_dirty (tbo);
+        tbo_window_refresh_status (tbo);
+        tbo_toolbar_update (tbo->toolbar);
     }
 
     self->n_frame_x = -1;
@@ -130,6 +137,16 @@ tbo_tool_frame_init (TboToolFrame *self)
 static void
 tbo_tool_frame_class_init (TboToolFrameClass *klass)
 {
+    GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
+
+    gobject_class->finalize = finalize;
+}
+
+static void
+finalize (GObject *object)
+{
+    tbo_tool_frame_reset_state (TBO_TOOL_FRAME (object));
+    G_OBJECT_CLASS (tbo_tool_frame_parent_class)->finalize (object);
 }
 
 /* object functions */
@@ -151,4 +168,20 @@ tbo_tool_frame_new_with_params (TboWindow *tbo)
     tbo_tool_base = TBO_TOOL_BASE (tbo_tool);
     tbo_tool_base->tbo = tbo;
     return tbo_tool;
+}
+
+void
+tbo_tool_frame_reset_state (TboToolFrame *self)
+{
+    if (self == NULL)
+        return;
+
+    self->n_frame_x = -1;
+    self->n_frame_y = -1;
+
+    if (self->tmp_frame != NULL)
+    {
+        tbo_frame_free (self->tmp_frame);
+        self->tmp_frame = NULL;
+    }
 }

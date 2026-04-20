@@ -41,8 +41,8 @@ tbo_comic_saveas_dialog (GtkWidget *widget, TboWindow *window)
     gchar *filename;
     char buffer[260];
 
-    g_strlcpy (buffer, window->comic->title, sizeof (buffer));
-    if (!g_str_has_suffix ((window->comic->title), ".tbo"))
+    g_strlcpy (buffer, tbo_comic_get_title (window->comic), sizeof (buffer));
+    if (!g_str_has_suffix (tbo_comic_get_title (window->comic), ".tbo"))
         strcat (buffer, ".tbo");
     filename = tbo_file_dialog_save_project (window, buffer);
 

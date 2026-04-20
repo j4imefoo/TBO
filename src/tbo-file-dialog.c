@@ -49,6 +49,30 @@ create_dialog (const gchar *title, TboWindow *window, const gchar *accept_label)
     return dialog;
 }
 
+static gchar *finish_dialog (struct file_dialog_data *data);
+
+static gchar *
+run_open_dialog (GtkFileDialog *dialog, TboWindow *window)
+{
+    struct file_dialog_data data = {0};
+
+    data.loop = g_main_loop_new (NULL, FALSE);
+    gtk_file_dialog_open (dialog, GTK_WINDOW (window->window), NULL, file_open_cb, &data);
+    g_main_loop_run (data.loop);
+    return finish_dialog (&data);
+}
+
+static gchar *
+run_save_dialog (GtkFileDialog *dialog, TboWindow *window)
+{
+    struct file_dialog_data data = {0};
+
+    data.loop = g_main_loop_new (NULL, FALSE);
+    gtk_file_dialog_save (dialog, GTK_WINDOW (window->window), NULL, file_save_cb, &data);
+    g_main_loop_run (data.loop);
+    return finish_dialog (&data);
+}
+
 static gchar *
 finish_dialog (struct file_dialog_data *data)
 {
@@ -101,17 +125,15 @@ tbo_file_dialog_open_project (TboWindow *window)
 {
     GtkFileDialog *dialog = create_dialog (_("Open"), window, _("_Open"));
     GListStore *filters = create_project_filters ();
-    struct file_dialog_data data = {0};
+    gchar *path;
 
     gtk_file_dialog_set_filters (dialog, G_LIST_MODEL (filters));
     set_initial_folder (dialog, tbo_window_get_open_dir (window));
-    data.loop = g_main_loop_new (NULL, FALSE);
-    gtk_file_dialog_open (dialog, GTK_WINDOW (window->window), NULL, file_open_cb, &data);
-    g_main_loop_run (data.loop);
+    path = run_open_dialog (dialog, window);
 
     g_object_unref (filters);
     g_object_unref (dialog);
-    return finish_dialog (&data);
+    return path;
 }
 
 gchar *
@@ -119,19 +141,17 @@ tbo_file_dialog_save_project (TboWindow *window, const gchar *suggested_name)
 {
     GtkFileDialog *dialog = create_dialog (_("Save as"), window, _("_Save"));
     GListStore *filters = create_project_filters ();
-    struct file_dialog_data data = {0};
+    gchar *path;
 
     gtk_file_dialog_set_filters (dialog, G_LIST_MODEL (filters));
     set_initial_folder (dialog, tbo_window_get_open_dir (window));
     if (suggested_name != NULL && *suggested_name != '\0')
         gtk_file_dialog_set_initial_name (dialog, suggested_name);
-    data.loop = g_main_loop_new (NULL, FALSE);
-    gtk_file_dialog_save (dialog, GTK_WINDOW (window->window), NULL, file_save_cb, &data);
-    g_main_loop_run (data.loop);
+    path = run_save_dialog (dialog, window);
 
     g_object_unref (filters);
     g_object_unref (dialog);
-    return finish_dialog (&data);
+    return path;
 }
 
 gchar *
@@ -140,7 +160,7 @@ tbo_file_dialog_open_image (TboWindow *window)
     GtkFileDialog *dialog = create_dialog (_("Add an Image"), window, _("_Open"));
     GListStore *filters = g_list_store_new (GTK_TYPE_FILE_FILTER);
     GtkFileFilter *filter = gtk_file_filter_new ();
-    struct file_dialog_data data = {0};
+    gchar *path;
 
     gtk_file_filter_set_name (filter, _("Image files"));
     gtk_file_filter_add_mime_type (filter, "image/*");
@@ -155,20 +175,18 @@ tbo_file_dialog_open_image (TboWindow *window)
 
     gtk_file_dialog_set_filters (dialog, G_LIST_MODEL (filters));
     set_initial_folder (dialog, tbo_window_get_open_dir (window));
-    data.loop = g_main_loop_new (NULL, FALSE);
-    gtk_file_dialog_open (dialog, GTK_WINDOW (window->window), NULL, file_open_cb, &data);
-    g_main_loop_run (data.loop);
+    path = run_open_dialog (dialog, window);
 
     g_object_unref (filters);
     g_object_unref (dialog);
-    return finish_dialog (&data);
+    return path;
 }
 
 gchar *
 tbo_file_dialog_save_export (TboWindow *window, const gchar *current_text)
 {
     GtkFileDialog *dialog = create_dialog (_("Export as"), window, _("_Save"));
-    struct file_dialog_data data = {0};
+    gchar *path;
 
     set_initial_folder (dialog, tbo_window_get_export_dir (window));
 
@@ -186,10 +204,8 @@ tbo_file_dialog_save_export (TboWindow *window, const gchar *current_text)
         }
     }
 
-    data.loop = g_main_loop_new (NULL, FALSE);
-    gtk_file_dialog_save (dialog, GTK_WINDOW (window->window), NULL, file_save_cb, &data);
-    g_main_loop_run (data.loop);
+    path = run_save_dialog (dialog, window);
 
     g_object_unref (dialog);
-    return finish_dialog (&data);
+    return path;
 }

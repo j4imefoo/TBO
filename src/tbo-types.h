@@ -31,33 +31,9 @@ typedef struct
     double b;
 } Color;
 
-typedef struct
-{
-    char title[255];
-    int width;
-    int height;
-    GList *pages;
-
-} Comic;
-
-typedef struct
-{
-    Comic *comic;
-    GList *frames;
-
-} Page;
-
-typedef struct
-{
-    int x;
-    int y;
-    int width;
-    int height;
-    gboolean border;
-    Color *color;
-    GList *objects;
-
-} Frame;
+typedef struct _Comic Comic;
+typedef struct _Page Page;
+typedef struct _Frame Frame;
 
 typedef struct
 {

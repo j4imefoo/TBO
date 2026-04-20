@@ -134,14 +134,19 @@ clone_selection (TboWindow *tbo)
     Page *page = tbo_comic_get_current_page (tbo->comic);
     TboDrawing *drawing = TBO_DRAWING (tbo->drawing);
 
+    gboolean cloned = FALSE;
+
     if (!tbo_drawing_get_current_frame (drawing) && frame)
     {
         Frame *cloned_frame = tbo_frame_clone (frame);
-        cloned_frame->x += 10;
-        cloned_frame->y -= 10;
+        tbo_frame_set_position (cloned_frame,
+                                tbo_frame_get_x (cloned_frame) + 10,
+                                tbo_frame_get_y (cloned_frame) - 10);
         tbo_page_add_frame (page, cloned_frame);
+        tbo_undo_stack_insert (tbo->undo_stack, tbo_action_frame_add_new (page, cloned_frame));
         tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_SELECTOR);
         tbo_tool_selector_set_selected (selector, cloned_frame);
+        cloned = TRUE;
     }
     else if (obj && tbo_drawing_get_current_frame (drawing))
     {
@@ -149,11 +154,18 @@ clone_selection (TboWindow *tbo)
         cloned_obj->x += 10;
         cloned_obj->y -= 10;
         tbo_frame_add_obj (frame, cloned_obj);
+        tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_add_new (frame, cloned_obj));
         tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_SELECTOR);
         tbo_tool_selector_set_selected_obj (selector, cloned_obj);
+        cloned = TRUE;
     }
 
-    tbo_window_mark_dirty (tbo);
+    if (cloned)
+    {
+        tbo_window_mark_dirty (tbo);
+        if (!tbo_drawing_get_current_frame (drawing))
+            tbo_window_refresh_status (tbo);
+    }
     tbo_drawing_update (drawing);
 }
 
@@ -174,12 +186,27 @@ flip_selection_h (TboWindow *tbo)
 {
     TboToolSelector *selector = TBO_TOOL_SELECTOR (tbo->toolbar->tools[TBO_TOOLBAR_SELECTOR]);
     TboObjectBase *obj = selector->selected_object;
+    Frame *frame = selector->selected_frame;
+    gint index1;
+    gint index2;
 
-    if (obj != NULL)
+    if (obj != NULL && frame != NULL)
+    {
+        index1 = tbo_frame_object_nth (frame, obj);
         tbo_object_base_fliph (obj);
+        tbo_undo_stack_insert (tbo->undo_stack,
+                               tbo_action_object_flags_new (obj,
+                                                            obj->flipv,
+                                                            !obj->fliph,
+                                                            obj->flipv,
+                                                            obj->fliph));
+    }
 
     if (obj != NULL)
+    {
         tbo_window_mark_dirty (tbo);
+        tbo_toolbar_update (tbo->toolbar);
+    }
     tbo_drawing_update (TBO_DRAWING (tbo->drawing));
 }
 
@@ -188,12 +215,24 @@ flip_selection_v (TboWindow *tbo)
 {
     TboToolSelector *selector = TBO_TOOL_SELECTOR (tbo->toolbar->tools[TBO_TOOLBAR_SELECTOR]);
     TboObjectBase *obj = selector->selected_object;
+    Frame *frame = selector->selected_frame;
 
-    if (obj != NULL)
+    if (obj != NULL && frame != NULL)
+    {
         tbo_object_base_flipv (obj);
+        tbo_undo_stack_insert (tbo->undo_stack,
+                               tbo_action_object_flags_new (obj,
+                                                            !obj->flipv,
+                                                            obj->fliph,
+                                                            obj->flipv,
+                                                            obj->fliph));
+    }
 
     if (obj != NULL)
+    {
         tbo_window_mark_dirty (tbo);
+        tbo_toolbar_update (tbo->toolbar);
+    }
     tbo_drawing_update (TBO_DRAWING (tbo->drawing));
 }
 
@@ -202,12 +241,24 @@ order_selection_up (TboWindow *tbo)
 {
     TboToolSelector *selector = TBO_TOOL_SELECTOR (tbo->toolbar->tools[TBO_TOOLBAR_SELECTOR]);
     TboObjectBase *obj = selector->selected_object;
+    Frame *frame = selector->selected_frame;
+    gint index1;
+    gint index2;
+
+    if (obj != NULL && frame != NULL)
+    {
+        index1 = tbo_frame_object_nth (frame, obj);
+        tbo_object_base_order_up (obj, frame);
+        index2 = tbo_frame_object_nth (frame, obj);
+        if (index1 != index2)
+            tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_order_new (frame, obj, index1, index2));
+    }
 
     if (obj != NULL)
-        tbo_object_base_order_up (obj, selector->selected_frame);
-
-    if (obj != NULL)
+    {
         tbo_window_mark_dirty (tbo);
+        tbo_toolbar_update (tbo->toolbar);
+    }
     tbo_drawing_update (TBO_DRAWING (tbo->drawing));
 }
 
@@ -216,12 +267,24 @@ order_selection_down (TboWindow *tbo)
 {
     TboToolSelector *selector = TBO_TOOL_SELECTOR (tbo->toolbar->tools[TBO_TOOLBAR_SELECTOR]);
     TboObjectBase *obj = selector->selected_object;
+    Frame *frame = selector->selected_frame;
+    gint index1;
+    gint index2;
+
+    if (obj != NULL && frame != NULL)
+    {
+        index1 = tbo_frame_object_nth (frame, obj);
+        tbo_object_base_order_down (obj, frame);
+        index2 = tbo_frame_object_nth (frame, obj);
+        if (index1 != index2)
+            tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_order_new (frame, obj, index1, index2));
+    }
 
     if (obj != NULL)
-        tbo_object_base_order_down (obj, selector->selected_frame);
-
-    if (obj != NULL)
+    {
         tbo_window_mark_dirty (tbo);
+        tbo_toolbar_update (tbo->toolbar);
+    }
     tbo_drawing_update (TBO_DRAWING (tbo->drawing));
 }
 

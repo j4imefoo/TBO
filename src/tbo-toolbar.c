@@ -127,12 +127,14 @@ static gboolean
 add_new_page (GtkWidget *widget, TboWindow *tbo)
 {
     Page *page = tbo_comic_new_page (tbo->comic);
+    gint index = tbo_comic_page_nth (tbo->comic, page);
 
     tbo_window_add_page_widget (tbo, create_darea (tbo));
     tbo_comic_set_current_page (tbo->comic, page);
+    tbo_undo_stack_insert (tbo->undo_stack, tbo_action_page_add_new (tbo->comic, page, index));
     tbo_window_set_current_tab_page (tbo, TRUE);
     tbo_window_mark_dirty (tbo);
-    tbo_window_update_status (tbo, 0, 0);
+    tbo_window_refresh_status (tbo);
     tbo_toolbar_update (tbo->toolbar);
     return FALSE;
 }
@@ -141,12 +143,20 @@ static gboolean
 del_current_page (GtkWidget *widget, TboWindow *tbo)
 {
     int nth = tbo_comic_page_index (tbo->comic);
+    Page *page = tbo_comic_get_current_page (tbo->comic);
+
+    if (page == NULL)
+        return FALSE;
+
+    g_object_ref (page);
     tbo_comic_del_current_page (tbo->comic);
+    tbo_undo_stack_insert (tbo->undo_stack, tbo_action_page_remove_new (tbo->comic, page, nth));
     tbo_window_remove_page_widget (tbo, nth);
     tbo_window_set_current_tab_page (tbo, TRUE);
     tbo_window_mark_dirty (tbo);
-    tbo_window_update_status (tbo, 0, 0);
+    tbo_window_refresh_status (tbo);
     tbo_toolbar_update (tbo->toolbar);
+    g_object_unref (page);
     return FALSE;
 }
 
@@ -156,7 +166,7 @@ next_page (GtkWidget *widget, TboWindow *tbo)
     tbo_comic_next_page (tbo->comic);
     tbo_window_set_current_tab_page (tbo, TRUE);
     tbo_toolbar_update (tbo->toolbar);
-    tbo_window_update_status (tbo, 0, 0);
+    tbo_window_refresh_status (tbo);
     tbo_drawing_adjust_scroll (TBO_DRAWING (tbo->drawing));
 
     return FALSE;
@@ -168,7 +178,7 @@ prev_page (GtkWidget *widget, TboWindow *tbo)
     tbo_comic_prev_page (tbo->comic);
     tbo_window_set_current_tab_page (tbo, TRUE);
     tbo_toolbar_update (tbo->toolbar);
-    tbo_window_update_status (tbo, 0, 0);
+    tbo_window_refresh_status (tbo);
     tbo_drawing_adjust_scroll (TBO_DRAWING (tbo->drawing));
 
     return FALSE;
@@ -247,10 +257,10 @@ generate_toolbar (TboToolbar *self)
     section = create_section_box ();
     self->button_new = create_button (create_project_icon ("icons/new.svg"), _("New comic"));
     self->button_open = create_button (create_icon_from_name ("document-open-symbolic"), _("Open comic"));
-    self->button_save = create_button (create_icon_from_name ("document-save-as-symbolic"), _("Save comic as"));
+    self->button_save = create_button (create_icon_from_name ("document-save-symbolic"), _("Save comic"));
     g_signal_connect (self->button_new, "clicked", G_CALLBACK (tbo_comic_new_dialog), self->tbo);
     g_signal_connect (self->button_open, "clicked", G_CALLBACK (tbo_comic_open_dialog), self->tbo);
-    g_signal_connect (self->button_save, "clicked", G_CALLBACK (tbo_comic_saveas_dialog), self->tbo);
+    g_signal_connect (self->button_save, "clicked", G_CALLBACK (tbo_comic_save_dialog), self->tbo);
     tbo_box_pack_start (section, self->button_new, FALSE, FALSE, 0);
     tbo_box_pack_start (section, self->button_open, FALSE, FALSE, 0);
     tbo_box_pack_start (section, self->button_save, FALSE, FALSE, 0);

@@ -24,30 +24,6 @@
 #include "tbo-widget.h"
 #include "tbo-window.h"
 
-struct new_comic_dialog_data {
-    GMainLoop *loop;
-    gint response;
-};
-
-static gboolean
-new_comic_close_request_cb (GtkWindow *dialog, struct new_comic_dialog_data *data)
-{
-    if (data->response == GTK_RESPONSE_NONE)
-        data->response = GTK_RESPONSE_REJECT;
-    g_main_loop_quit (data->loop);
-    return TRUE;
-}
-
-static void
-new_comic_button_cb (GtkButton *button, GtkWindow *dialog)
-{
-    struct new_comic_dialog_data *data = g_object_get_data (G_OBJECT (dialog), "tbo-new-comic-data");
-    gint response = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (button), "tbo-response"));
-
-    data->response = response;
-    gtk_window_close (dialog);
-}
-
 gboolean
 tbo_comic_new_dialog (GtkWidget *widget, TboWindow *window)
 {
@@ -60,7 +36,7 @@ tbo_comic_new_dialog (GtkWidget *widget, TboWindow *window)
     GtkWidget *spin_w;
     GtkWidget *spin_h;
     GtkAdjustment *adjustment;
-    struct new_comic_dialog_data data;
+    TboDialogRunData data;
 
     int width;
     int height;
@@ -105,25 +81,20 @@ tbo_comic_new_dialog (GtkWidget *widget, TboWindow *window)
 
     button = gtk_button_new_with_mnemonic (_("_Cancel"));
     g_object_set_data (G_OBJECT (button), "tbo-response", GINT_TO_POINTER (GTK_RESPONSE_REJECT));
-    g_signal_connect (button, "clicked", G_CALLBACK (new_comic_button_cb), dialog);
+    g_signal_connect (button, "clicked", G_CALLBACK (tbo_dialog_button_cb), dialog);
     tbo_widget_add_child (actions, button);
 
     button = gtk_button_new_with_mnemonic (_("_OK"));
     gtk_widget_add_css_class (button, "suggested-action");
     g_object_set_data (G_OBJECT (button), "tbo-response", GINT_TO_POINTER (GTK_RESPONSE_ACCEPT));
-    g_signal_connect (button, "clicked", G_CALLBACK (new_comic_button_cb), dialog);
+    g_signal_connect (button, "clicked", G_CALLBACK (tbo_dialog_button_cb), dialog);
     tbo_widget_add_child (actions, button);
 
     tbo_widget_add_child (vbox, actions);
 
-    data.loop = g_main_loop_new (NULL, FALSE);
-    data.response = GTK_RESPONSE_NONE;
-    g_object_set_data (G_OBJECT (dialog), "tbo-new-comic-data", &data);
-    g_signal_connect (dialog, "close-request", G_CALLBACK (new_comic_close_request_cb), &data);
-    tbo_widget_show_all (dialog);
-    gtk_window_present (GTK_WINDOW (dialog));
-
-    g_main_loop_run (data.loop);
+    tbo_dialog_run_data_init (&data, GTK_RESPONSE_REJECT);
+    g_signal_connect (dialog, "close-request", G_CALLBACK (tbo_dialog_close_request_cb), &data);
+    tbo_dialog_run (GTK_WINDOW (dialog), &data);
 
     if (data.response == GTK_RESPONSE_ACCEPT)
     {
@@ -133,7 +104,7 @@ tbo_comic_new_dialog (GtkWidget *widget, TboWindow *window)
     }
 
     gtk_window_destroy (GTK_WINDOW (dialog));
-    g_main_loop_unref (data.loop);
+    tbo_dialog_run_data_clear (&data);
 
     return FALSE;
 }

@@ -37,7 +37,7 @@ tbo_comic_open_dialog (GtkWidget *widget, TboWindow *window)
         tbo_window_set_browse_path (window, filename);
         tbo_comic_open (window, filename);
         tbo_drawing_update (TBO_DRAWING (window->drawing));
-        tbo_window_update_status (window, 0, 0);
+        tbo_window_refresh_status (window);
         g_free (filename);
     }
 

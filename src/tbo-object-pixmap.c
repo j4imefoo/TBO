@@ -24,7 +24,9 @@
 #include <gdk/gdk.h>
 #include <stdio.h>
 #include "tbo-types.h"
+#include "frame.h"
 #include "tbo-files.h"
+#include "tbo-utils.h"
 #include "tbo-object-pixmap.h"
 
 G_DEFINE_TYPE (TboObjectPixmap, tbo_object_pixmap, TBO_TYPE_OBJECT_BASE);
@@ -175,15 +177,20 @@ static void
 draw (TboObjectBase *self, Frame *frame, cairo_t *cr)
 {
     TboObjectPixmap *pixmap = TBO_OBJECT_PIXMAP (self);
+    int frame_x = tbo_frame_get_x (frame);
+    int frame_y = tbo_frame_get_y (frame);
+    int frame_width = tbo_frame_get_width (frame);
+    int frame_height = tbo_frame_get_height (frame);
+
     if (!ensure_scaled_pixbuf (self, pixmap))
         return;
 
     cairo_matrix_t mx = {1, 0, 0, 1, 0, 0};
     tbo_object_base_get_flip_matrix (self, &mx);
 
-    cairo_rectangle(cr, frame->x+2, frame->y+2, frame->width-4, frame->height-4);
+    cairo_rectangle (cr, frame_x + 2, frame_y + 2, frame_width - 4, frame_height - 4);
     cairo_clip (cr);
-    cairo_translate (cr, frame->x+self->x, frame->y+self->y);
+    cairo_translate (cr, frame_x + self->x, frame_y + self->y);
     cairo_rotate (cr, self->angle);
     cairo_transform (cr, &mx);
 
@@ -192,25 +199,20 @@ draw (TboObjectBase *self, Frame *frame, cairo_t *cr)
 
     cairo_transform (cr, &mx);
     cairo_rotate (cr, -self->angle);
-    cairo_translate (cr, -(frame->x+self->x), -(frame->y+self->y));
+    cairo_translate (cr, -(frame_x + self->x), -(frame_y + self->y));
     cairo_reset_clip (cr);
 }
 
 static void
 save (TboObjectBase *self, FILE *file)
 {
-    char buffer[1024];
+    GString *xml = g_string_new ("   <piximage");
 
-    snprintf (buffer, 1024, "   <piximage x=\"%d\" y=\"%d\" "
-                           "width=\"%d\" height=\"%d\" "
-                           "angle=\"%f\" flipv=\"%d\" fliph=\"%d\" "
-                           "path=\"%s\">\n ",
-                           self->x, self->y, self->width, self->height,
-                           self->angle, self->flipv, self->fliph, TBO_OBJECT_PIXMAP (self)->path->str);
-    fwrite (buffer, sizeof (char), strlen (buffer), file);
-
-    snprintf (buffer, 1024, "   </piximage>\n");
-    fwrite (buffer, sizeof (char), strlen (buffer), file);
+    tbo_xml_append_object_attrs (xml, self);
+    tbo_xml_append_attr_string (xml, "path", TBO_OBJECT_PIXMAP (self)->path->str);
+    g_string_append (xml, ">\n ");
+    tbo_xml_write (file, xml);
+    fputs ("   </piximage>\n", file);
 }
 
 static TboObjectBase *

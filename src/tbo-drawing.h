@@ -47,6 +47,12 @@ struct _TboDrawing
     Frame *current_frame;
     gdouble zoom;
     Comic *comic;
+    TboWindow *tbo;
+    GString *tooltip;
+    gint tooltip_x;
+    gint tooltip_y;
+    gdouble tooltip_alpha;
+    guint tooltip_timeout_id;
     guint redraw_source_id;
 };
 
@@ -67,6 +73,8 @@ GType tbo_drawing_get_type (void);
 GtkWidget * tbo_drawing_new (void);
 GtkWidget * tbo_drawing_new_with_params (Comic *comic);
 void tbo_drawing_update (TboDrawing *self);
+void tbo_drawing_set_comic (TboDrawing *self, Comic *comic);
+Comic * tbo_drawing_get_comic (TboDrawing *self);
 void tbo_drawing_set_current_frame (TboDrawing *self, Frame *frame);
 Frame * tbo_drawing_get_current_frame (TboDrawing *self);
 void tbo_drawing_draw (TboDrawing *self, cairo_t *cr);

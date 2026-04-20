@@ -27,6 +27,7 @@
 #include "tbo-files.h"
 #include "tbo-window.h"
 #include "tbo-tool-selector.h"
+#include "tbo-undo.h"
 #include "tbo-widget.h"
 
 static TboObjectBase *
@@ -134,14 +135,16 @@ tbo_dnd_insert_asset (TboWindow *tbo, const gchar *asset_path, gint x, gint y)
     if (frame == NULL || asset_path == NULL || *asset_path == '\0')
         return NULL;
 
-    if (x < 0 || y < 0 || x > frame->width || y > frame->height)
+    if (x < 0 || y < 0 || x > tbo_frame_get_width (frame) || y > tbo_frame_get_height (frame))
         return NULL;
 
     asset = create_asset (asset_path, x, y);
     tbo_frame_add_obj (frame, asset);
+    tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_add_new (frame, asset));
     select_inserted_asset (tbo, frame, asset);
     tbo_window_mark_dirty (tbo);
     tbo_drawing_update (TBO_DRAWING (tbo->drawing));
+    tbo_toolbar_update (tbo->toolbar);
     return asset;
 }
 

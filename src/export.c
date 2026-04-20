@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "export.h"
+#include "comic.h"
 #include "tbo-file-dialog.h"
 #include "tbo-drawing.h"
 #include "tbo-ui-utils.h"
@@ -45,34 +46,149 @@ struct export_file_args {
     GtkEntry *entry;
 };
 
-struct export_dialog_data {
-    GMainLoop *loop;
-    gint response;
-};
-
-static gboolean
-export_close_request_cb (GtkWindow *dialog, struct export_dialog_data *data)
-{
-    if (data->response == GTK_RESPONSE_NONE)
-        data->response = GTK_RESPONSE_CANCEL;
-    g_main_loop_quit (data->loop);
-    return TRUE;
-}
-
-static void
-export_button_cb (GtkButton *button, GtkWindow *dialog)
-{
-    struct export_dialog_data *data = g_object_get_data (G_OBJECT (dialog), "tbo-export-data");
-    gint response = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (button), "tbo-response"));
-
-    data->response = response;
-    gtk_window_close (dialog);
-}
-
 static void
 show_export_error (TboWindow *tbo, const gchar *message)
 {
     tbo_alert_show (GTK_WINDOW (tbo->window), message, NULL);
+}
+
+gboolean
+tbo_export_file (TboWindow *tbo,
+                 const gchar *filename,
+                 const gchar *format_hint,
+                 gint width,
+                 gint height)
+{
+    cairo_surface_t *surface = NULL;
+    cairo_t *cr = NULL;
+    gchar *base_filename = NULL;
+    gchar *format_pages = NULL;
+    GList *page_list;
+    gchar *export_to = NULL;
+    gint i, n, n2;
+    gboolean exported = FALSE;
+    gboolean success = TRUE;
+
+    if (filename == NULL || *filename == '\0' || width <= 0 || height <= 0)
+        return FALSE;
+
+    if (format_hint != NULL && *format_hint != '\0')
+    {
+        export_to = g_ascii_strdown (format_hint, -1);
+        base_filename = g_strdup (filename);
+    }
+    else
+    {
+        gchar *dot = strrchr (filename, '.');
+
+        if (dot != NULL && dot[1] != '\0')
+        {
+            export_to = g_ascii_strdown (dot + 1, -1);
+            base_filename = g_strndup (filename, dot - filename);
+        }
+        else
+        {
+            base_filename = g_strdup (filename);
+            export_to = g_strdup ("png");
+        }
+    }
+
+    if (g_strcmp0 (export_to, "png") != 0 &&
+        g_strcmp0 (export_to, "pdf") != 0 &&
+        g_strcmp0 (export_to, "svg") != 0)
+    {
+        g_free (export_to);
+        export_to = g_strdup ("png");
+    }
+
+    n = tbo_comic_len (tbo->comic);
+    n2 = n;
+    for (i = 0; n; n = n / 10, i++);
+    format_pages = g_strdup_printf ("%%s%%0%dd.%%s", i);
+
+    for (i = 0, page_list = tbo_comic_get_pages (tbo->comic); page_list; i++, page_list = page_list->next)
+    {
+        gchar *rpath = g_strdup_printf (format_pages, base_filename, i, export_to);
+
+        if (n2 == 1)
+        {
+            g_free (rpath);
+            rpath = g_strdup_printf ("%s.%s", base_filename, export_to);
+        }
+
+        if (strcmp (export_to, "pdf") == 0)
+        {
+            if (!surface)
+            {
+                g_free (rpath);
+                rpath = g_strdup_printf ("%s.%s", base_filename, export_to);
+                surface = cairo_pdf_surface_create (rpath, width, height);
+                cr = cairo_create (surface);
+            }
+        }
+        else if (strcmp (export_to, "svg") == 0)
+        {
+            surface = cairo_svg_surface_create (rpath, width, height);
+            cr = cairo_create (surface);
+        }
+        else
+        {
+            surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width, height);
+            cr = cairo_create (surface);
+        }
+
+        if (cairo_surface_status (surface) != CAIRO_STATUS_SUCCESS || cairo_status (cr) != CAIRO_STATUS_SUCCESS)
+        {
+            show_export_error (tbo, cairo_status_to_string (cairo_surface_status (surface) != CAIRO_STATUS_SUCCESS ?
+                                                            cairo_surface_status (surface) :
+                                                            cairo_status (cr)));
+            success = FALSE;
+            g_free (rpath);
+            break;
+        }
+
+        tbo_drawing_draw_page (TBO_DRAWING (tbo->drawing), cr, (Page *) page_list->data, width, height);
+
+        if (strcmp (export_to, "pdf") == 0)
+            cairo_show_page (cr);
+        else if (strcmp (export_to, "png") == 0)
+        {
+            cairo_status_t status = cairo_surface_write_to_png (surface, rpath);
+            if (status != CAIRO_STATUS_SUCCESS)
+            {
+                show_export_error (tbo, cairo_status_to_string (status));
+                success = FALSE;
+            }
+        }
+
+        if (success)
+            exported = TRUE;
+
+        if (strcmp (export_to, "pdf") != 0)
+        {
+            cairo_surface_destroy (surface);
+            cairo_destroy (cr);
+            surface = NULL;
+            cr = NULL;
+        }
+
+        g_free (rpath);
+
+        if (!success)
+            break;
+    }
+
+    if (surface != NULL)
+    {
+        cairo_surface_destroy (surface);
+        cairo_destroy (cr);
+    }
+
+    g_free (format_pages);
+    g_free (base_filename);
+    g_free (export_to);
+
+    return success && exported;
 }
 
 static gboolean
@@ -115,18 +231,11 @@ filedialog_cb (GtkWidget *widget, gpointer data)
 gboolean
 tbo_export (TboWindow *tbo)
 {
-    cairo_surface_t *surface = NULL;
-    cairo_t *cr;
-    gint width = tbo->comic->width;
-    gint height = tbo->comic->height;
+    gint width = tbo_comic_get_width (tbo->comic);
+    gint height = tbo_comic_get_height (tbo->comic);
     gchar *filename = NULL;
-    gchar *base_filename = NULL;
-    gchar *format_pages = NULL;
-    GList *page_list;
-    gint i, n, n2;
     gint response;
     gdouble scale = 1.0;
-    gchar *export_to = NULL;
     gint export_to_index;
     struct export_spin_args spin_args;
     struct export_spin_args spin_args2;
@@ -153,7 +262,8 @@ tbo_export (TboWindow *tbo)
         NULL,
     };
 
-    struct export_dialog_data data;
+    TboDialogRunData data;
+    const gchar *format_hint = NULL;
 
     dialog = gtk_window_new ();
     gtk_window_set_title (GTK_WINDOW (dialog), _("Export as"));
@@ -180,24 +290,24 @@ tbo_export (TboWindow *tbo)
     }
     else
     {
-        gtk_editable_set_text (GTK_EDITABLE (fileinput), tbo->comic->title);
+        gtk_editable_set_text (GTK_EDITABLE (fileinput), tbo_comic_get_title (tbo->comic));
     }
     tbo_widget_add_child (hbox, filelabel);
     tbo_widget_add_child (hbox, fileinput);
     tbo_widget_add_child (hbox, filebutton);
     tbo_widget_add_child (vbox, hbox);
 
-    spinw = add_spin_with_label (vbox, _("width: "), tbo->comic->width);
-    spinh = add_spin_with_label (vbox, _("height: "), tbo->comic->height);
+    spinw = add_spin_with_label (vbox, _("width: "), tbo_comic_get_width (tbo->comic));
+    spinh = add_spin_with_label (vbox, _("height: "), tbo_comic_get_height (tbo->comic));
 
-    spin_args.current_size = tbo->comic->width;
-    spin_args.current_size2 = tbo->comic->height;
+    spin_args.current_size = tbo_comic_get_width (tbo->comic);
+    spin_args.current_size2 = tbo_comic_get_height (tbo->comic);
     spin_args.spin2 = spinh;
     spin_args.scale = &scale;
     g_signal_connect (spinw, "value-changed", G_CALLBACK (export_size_cb), &spin_args);
 
-    spin_args2.current_size = tbo->comic->height;
-    spin_args2.current_size2 = tbo->comic->width;
+    spin_args2.current_size = tbo_comic_get_height (tbo->comic);
+    spin_args2.current_size2 = tbo_comic_get_width (tbo->comic);
     spin_args2.spin2 = spinw;
     spin_args2.scale = &scale;
     g_signal_connect (spinh, "value-changed", G_CALLBACK (export_size_cb), &spin_args2);
@@ -211,13 +321,13 @@ tbo_export (TboWindow *tbo)
 
     button = gtk_button_new_with_mnemonic (_("_Cancel"));
     g_object_set_data (G_OBJECT (button), "tbo-response", GINT_TO_POINTER (GTK_RESPONSE_CANCEL));
-    g_signal_connect (button, "clicked", G_CALLBACK (export_button_cb), dialog);
+    g_signal_connect (button, "clicked", G_CALLBACK (tbo_dialog_button_cb), dialog);
     tbo_widget_add_child (actions, button);
 
     button = gtk_button_new_with_mnemonic (_("_Save"));
     gtk_widget_add_css_class (button, "suggested-action");
     g_object_set_data (G_OBJECT (button), "tbo-response", GINT_TO_POINTER (GTK_RESPONSE_ACCEPT));
-    g_signal_connect (button, "clicked", G_CALLBACK (export_button_cb), dialog);
+    g_signal_connect (button, "clicked", G_CALLBACK (tbo_dialog_button_cb), dialog);
     tbo_widget_add_child (actions, button);
 
     tbo_widget_add_child (vbox, actions);
@@ -228,12 +338,9 @@ tbo_export (TboWindow *tbo)
     file_args.entry = GTK_ENTRY (fileinput);
     g_signal_connect (filebutton, "clicked", G_CALLBACK (filedialog_cb), &file_args);
 
-    data.loop = g_main_loop_new (NULL, FALSE);
-    data.response = GTK_RESPONSE_NONE;
-    g_object_set_data (G_OBJECT (dialog), "tbo-export-data", &data);
-    g_signal_connect (dialog, "close-request", G_CALLBACK (export_close_request_cb), &data);
-    gtk_window_present (GTK_WINDOW (dialog));
-    g_main_loop_run (data.loop);
+    tbo_dialog_run_data_init (&data, GTK_RESPONSE_CANCEL);
+    g_signal_connect (dialog, "close-request", G_CALLBACK (tbo_dialog_close_request_cb), &data);
+    tbo_dialog_run (GTK_WINDOW (dialog), &data);
 
     response = data.response;
 
@@ -255,127 +362,29 @@ tbo_export (TboWindow *tbo)
         /* 0 guess, 1 png, 2 pdf, 3 svg */
         export_to_index = gtk_drop_down_get_selected (GTK_DROP_DOWN (dropdown));
 
-        switch (export_to_index)
+        if (export_to_index == 1)
+            format_hint = "png";
+        else if (export_to_index == 2)
+            format_hint = "pdf";
+        else if (export_to_index == 3)
+            format_hint = "svg";
+
+        width = (gint) (width * scale);
+        height = (gint) (height * scale);
+
+        if (!tbo_export_file (tbo, filename, format_hint, width, height))
         {
-            case 0:
-            {
-                gchar *dot = strrchr (filename, '.');
-
-                if (dot != NULL && dot[1] != '\0')
-                {
-                    export_to = g_ascii_strdown (dot + 1, -1);
-                    base_filename = g_strndup (filename, dot - filename);
-                }
-                else
-                {
-                    base_filename = g_strdup (filename);
-                    export_to = g_strdup ("png");
-                }
-                break;
-            }
-            case 1:
-                export_to = g_strdup ("png");
-                base_filename = g_strdup (filename);
-                break;
-            case 2:
-                export_to = g_strdup ("pdf");
-                base_filename = g_strdup (filename);
-                break;
-            case 3:
-                export_to = g_strdup ("svg");
-                base_filename = g_strdup (filename);
-                break;
-            default:
-                export_to = g_strdup ("png");
-                base_filename = g_strdup (filename);
-                break;
-        }
-
-        if (g_strcmp0 (export_to, "png") != 0 &&
-            g_strcmp0 (export_to, "pdf") != 0 &&
-            g_strcmp0 (export_to, "svg") != 0)
-        {
-            g_free (export_to);
-            export_to = g_strdup ("png");
-        }
-
-        n = g_list_length (tbo->comic->pages);
-        n2 = n;
-        for (i=0; n; n=n/10, i++);
-        format_pages = g_strdup_printf ("%%s%%0%dd.%%s", i);
-        for (i=0, page_list = g_list_first (tbo->comic->pages); page_list; i++, page_list = page_list->next)
-        {
-            gchar *rpath = g_strdup_printf (format_pages, base_filename, i, export_to);
-            if (n2 == 1)
-            {
-                g_free (rpath);
-                rpath = g_strdup_printf ("%s.%s", base_filename, export_to);
-            }
-            // PDF
-            if (strcmp (export_to, "pdf") == 0)
-            {
-                if (!surface)
-                {
-                    g_free (rpath);
-                    rpath = g_strdup_printf ("%s.%s", base_filename, export_to);
-                    surface = cairo_pdf_surface_create (rpath, width, height);
-                    cr = cairo_create (surface);
-                }
-            }
-            // SVG
-            else if (strcmp (export_to, "svg") == 0)
-            {
-                surface = cairo_svg_surface_create (rpath, width, height);
-                cr = cairo_create (surface);
-            }
-            // PNG or unknown format... default is png
-            else
-            {
-                surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width, height);
-                cr = cairo_create (surface);
-            }
-
-            cairo_scale (cr, scale, scale);
-
-            // drawing the stuff
-            tbo_drawing_draw_page (TBO_DRAWING (tbo->drawing), cr, (Page *)page_list->data, width/scale, height/scale);
-
-            if (strcmp (export_to, "pdf") == 0)
-                cairo_show_page (cr);
-            else if (strcmp (export_to, "png") == 0)
-            {
-                cairo_status_t status = cairo_surface_write_to_png (surface, rpath);
-                if (status != CAIRO_STATUS_SUCCESS)
-                    show_export_error (tbo, cairo_status_to_string (status));
-            }
-
-            cairo_scale (cr, 1/scale, 1/scale);
-
-            // Not destroying for multipage
-            if (strcmp (export_to, "pdf") != 0)
-            {
-                cairo_surface_destroy (surface);
-                cairo_destroy (cr);
-                surface = NULL;
-            }
-
-            g_free (rpath);
-        }
-
-        if (surface)
-        {
-            cairo_surface_destroy (surface);
-            cairo_destroy (cr);
+            gtk_window_destroy (GTK_WINDOW (dialog));
+            tbo_dialog_run_data_clear (&data);
+            g_free (filename);
+            return FALSE;
         }
     }
 
-    g_free (format_pages);
-    g_free (base_filename);
-    g_free (export_to);
     g_free (filename);
 
     gtk_window_destroy (GTK_WINDOW (dialog));
-    g_main_loop_unref (data.loop);
+    tbo_dialog_run_data_clear (&data);
 
-    return FALSE;
+    return response == GTK_RESPONSE_ACCEPT;
 }

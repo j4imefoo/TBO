@@ -33,16 +33,84 @@
 #include "tbo-utils.h"
 #include "tbo-widget.h"
 
+struct _Comic
+{
+    GObject parent_instance;
+
+    char title[255];
+    int width;
+    int height;
+    GList *pages;
+    Page *current_page;
+};
+
+struct _ComicClass
+{
+    GObjectClass parent_class;
+};
+
+G_DEFINE_TYPE (Comic, tbo_comic, G_TYPE_OBJECT);
+
+static GList *
+comic_page_link (Comic *comic, Page *page)
+{
+    return g_list_find (comic->pages, page);
+}
+
+static void
+comic_set_current_page_fallback (Comic *comic, GList *hint)
+{
+    if (hint != NULL)
+        comic->current_page = hint->data;
+    else if (comic->pages != NULL)
+        comic->current_page = comic->pages->data;
+    else
+        comic->current_page = NULL;
+}
+
+static void
+tbo_comic_dispose (GObject *object)
+{
+    Comic *self = TBO_COMIC (object);
+
+    self->current_page = NULL;
+
+    if (self->pages != NULL)
+    {
+        g_list_free_full (self->pages, (GDestroyNotify) tbo_page_free);
+        self->pages = NULL;
+    }
+
+    G_OBJECT_CLASS (tbo_comic_parent_class)->dispose (object);
+}
+
+static void
+tbo_comic_init (Comic *self)
+{
+    self->title[0] = '\0';
+    self->width = 0;
+    self->height = 0;
+    self->pages = NULL;
+    self->current_page = NULL;
+}
+
+static void
+tbo_comic_class_init (ComicClass *klass)
+{
+    GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
+
+    gobject_class->dispose = tbo_comic_dispose;
+}
+
 Comic *
 tbo_comic_new (const char *title, int width, int height)
 {
     Comic *new_comic;
 
-    new_comic = malloc(sizeof(Comic));
+    new_comic = g_object_new (TBO_TYPE_COMIC, NULL);
     snprintf (new_comic->title, 255, "%s", title);
     new_comic->width = width;
     new_comic->height = height;
-    new_comic->pages = NULL;
     tbo_comic_new_page (new_comic);
 
     return new_comic;
@@ -51,61 +119,114 @@ tbo_comic_new (const char *title, int width, int height)
 void
 tbo_comic_free (Comic *comic)
 {
-    GList *p;
+    if (comic != NULL)
+        g_object_unref (comic);
+}
 
-    for (p=g_list_first (comic->pages); p; p = g_list_next(p))
-    {
-        tbo_page_free ((Page *) p->data);
-    }
+const gchar *
+tbo_comic_get_title (Comic *comic)
+{
+    return comic->title;
+}
 
-    g_list_free (g_list_first (comic->pages));
-    free (comic);
+gint
+tbo_comic_get_width (Comic *comic)
+{
+    return comic->width;
+}
+
+gint
+tbo_comic_get_height (Comic *comic)
+{
+    return comic->height;
+}
+
+GList *
+tbo_comic_get_pages (Comic *comic)
+{
+    return comic->pages;
 }
 
 Page *
-tbo_comic_new_page (Comic *comic){
+tbo_comic_new_page (Comic *comic)
+{
     Page *page;
 
     page = tbo_page_new (comic);
-    comic->pages = g_list_append (g_list_first (comic->pages), page);
+    tbo_comic_insert_page (comic, page, -1);
 
     return page;
+}
+
+void
+tbo_comic_insert_page (Comic *comic, Page *page, int nth)
+{
+    if (nth < 0)
+        comic->pages = g_list_append (comic->pages, page);
+    else
+        comic->pages = g_list_insert (comic->pages, page, nth);
+
+    if (comic->current_page == NULL)
+        comic->current_page = page;
 }
 
 void
 tbo_comic_del_page (Comic *comic, int nth)
 {
     Page *page;
+    GList *link;
+    GList *next_link;
+    GList *prev_link;
 
-    page = (Page *) g_list_nth_data (g_list_first (comic->pages), nth);
-    comic->pages = g_list_remove (g_list_first (comic->pages), page);
+    page = (Page *) g_list_nth_data (comic->pages, nth);
+    if (page == NULL)
+        return;
+
+    link = comic_page_link (comic, page);
+    next_link = link != NULL ? link->next : NULL;
+    prev_link = link != NULL ? link->prev : NULL;
+
+    comic->pages = g_list_remove (comic->pages, page);
+
+    if (comic->current_page == page)
+        comic_set_current_page_fallback (comic, next_link != NULL ? next_link : prev_link);
+
     tbo_page_free (page);
 }
 
 int
 tbo_comic_len (Comic *comic)
 {
-    return g_list_length (g_list_first (comic->pages));
+    return g_list_length (comic->pages);
 }
 
 int
 tbo_comic_page_index (Comic *comic)
 {
-    return g_list_position ( g_list_first (comic->pages), comic->pages);
+    if (comic->current_page == NULL)
+        return -1;
+
+    return g_list_index (comic->pages, comic->current_page);
 }
 
 int
 tbo_comic_page_nth (Comic *comic, Page *page)
 {
-    return g_list_index (g_list_first (comic->pages), page);
+    return g_list_index (comic->pages, page);
 }
 
 Page *
 tbo_comic_next_page (Comic *comic)
 {
-    if (comic->pages->next)
+    GList *current_link;
+
+    if (comic->current_page == NULL)
+        return NULL;
+
+    current_link = comic_page_link (comic, comic->current_page);
+    if (current_link != NULL && current_link->next != NULL)
     {
-        comic->pages = comic->pages->next;
+        comic->current_page = current_link->next->data;
         return tbo_comic_get_current_page (comic);
     }
     return NULL;
@@ -114,9 +235,15 @@ tbo_comic_next_page (Comic *comic)
 Page *
 tbo_comic_prev_page (Comic *comic)
 {
-    if (comic->pages->prev)
+    GList *current_link;
+
+    if (comic->current_page == NULL)
+        return NULL;
+
+    current_link = comic_page_link (comic, comic->current_page);
+    if (current_link != NULL && current_link->prev != NULL)
     {
-        comic->pages = comic->pages->prev;
+        comic->current_page = current_link->prev->data;
         return tbo_comic_get_current_page (comic);
     }
     return NULL;
@@ -125,19 +252,27 @@ tbo_comic_prev_page (Comic *comic)
 Page *
 tbo_comic_get_current_page (Comic *comic)
 {
-    return (Page *)comic->pages->data;
+    return comic->current_page;
 }
 
 void
 tbo_comic_set_current_page (Comic *comic, Page *page)
 {
-    comic->pages = g_list_find (g_list_first (comic->pages), page);
+    if (page == NULL)
+    {
+        comic->current_page = NULL;
+        return;
+    }
+
+    comic->current_page = comic_page_link (comic, page) != NULL ? page : NULL;
 }
 
 void
 tbo_comic_set_current_page_nth (Comic *comic, int nth)
 {
-    comic->pages = g_list_nth (g_list_first (comic->pages), nth);
+    GList *link = g_list_nth (comic->pages, nth);
+
+    comic->current_page = link != NULL ? link->data : NULL;
 }
 
 gboolean
@@ -194,11 +329,11 @@ tbo_comic_save (TboWindow *tbo, char *filename)
     gtk_window_set_title (GTK_WINDOW (tbo->window), comic->title);
 
     snprintf (buffer, 255, "<tbo width=\"%d\" height=\"%d\">\n",
-                                                    comic->width,
-                                                    comic->height);
+              comic->width,
+              comic->height);
     fwrite (buffer, sizeof (char), strlen (buffer), file);
 
-    for (p = g_list_first (comic->pages); p; p = g_list_next(p))
+    for (p = comic->pages; p; p = g_list_next (p))
     {
         tbo_page_save ((Page *) p->data, file);
     }
@@ -220,9 +355,8 @@ tbo_comic_open (TboWindow *window, char *filename)
 
     if (newcomic)
     {
+        tbo_window_reset_document_state (window);
         oldcomic = window->comic;
-        window->comic = newcomic;
-        gtk_window_set_title (GTK_WINDOW (window->window), window->comic->title);
 
         n_pages = tbo_window_get_page_count (window);
         for (nth = n_pages - 1; nth >= 0; nth--)
@@ -230,9 +364,11 @@ tbo_comic_open (TboWindow *window, char *filename)
             tbo_window_remove_page_widget (window, nth);
         }
 
+        window->comic = newcomic;
+        gtk_window_set_title (GTK_WINDOW (window->window), tbo_comic_get_title (window->comic));
         tbo_comic_free (oldcomic);
 
-        for (nth=0; nth<tbo_comic_len (window->comic); nth++)
+        for (nth = 0; nth < tbo_comic_len (window->comic); nth++)
         {
             tbo_window_add_page_widget (window, create_darea (window));
         }
@@ -241,7 +377,7 @@ tbo_comic_open (TboWindow *window, char *filename)
         tbo_window_set_current_tab_page (window, TRUE);
         tbo_drawing_adjust_scroll (TBO_DRAWING (window->drawing));
         tbo_drawing_update (TBO_DRAWING (window->drawing));
-        tbo_window_update_status (window, 0, 0);
+        tbo_window_refresh_status (window);
         tbo_window_mark_clean (window);
     }
 }

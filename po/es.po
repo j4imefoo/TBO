@@ -72,6 +72,10 @@ msgstr "Cómic nuevo"
 msgid "Save comic as"
 msgstr "Guardar como"
 
+#: ../src/tbo-toolbar.c:250
+msgid "Save comic"
+msgstr "Guardar cómic"
+
 #: ../src/tbo-toolbar.c:260
 msgid "Undo"
 msgstr "Deshacer"
@@ -303,6 +307,59 @@ msgstr "Sin título"
 #, c-format
 msgid "page: %d of %d [ %5d,%5d ] | frames: %d"
 msgstr "página: %d de %d [ %5d,%5d ] | viñetas: %d"
+
+#: ../src/tbo-window.c:285
+#, c-format
+msgid "Page %d of %d"
+msgstr "Página %d de %d"
+
+#: ../src/tbo-window.c:285
+#, c-format
+msgid "Frames: %d"
+msgstr "Viñetas: %d"
+
+#: ../src/tbo-window.c:285
+#, c-format
+msgid "Editing frame %d"
+msgstr "Editando viñeta %d"
+
+#: ../src/tbo-window.c:285
+msgid "Editing frame"
+msgstr "Editando viñeta"
+
+#: ../src/tbo-window.c:285
+#, c-format
+msgid "Frame %d selected"
+msgstr "Viñeta %d seleccionada"
+
+#: ../src/tbo-window.c:285
+msgid "Frame selected"
+msgstr "Viñeta seleccionada"
+
+#: ../src/tbo-window.c:285
+#, c-format
+msgid "Object: %s"
+msgstr "Objeto: %s"
+
+#: ../src/tbo-window.c:285
+msgid "Object"
+msgstr "Objeto"
+
+#: ../src/tbo-window.c:285
+msgid "Group"
+msgstr "Grupo"
+
+#: ../src/tbo-window.c:285
+msgid "SVG image"
+msgstr "Imagen SVG"
+
+#: ../src/tbo-window.c:285
+msgid "Enter: frame"
+msgstr "Intro: entrar en viñeta"
+
+#: ../src/tbo-window.c:285
+msgid "Esc: back to page"
+msgstr "Esc: volver a la página"
 
 #: ../src/ui-menu.c:232
 msgid "TBO comic editor"

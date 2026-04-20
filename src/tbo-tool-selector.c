@@ -56,6 +56,49 @@ static void frame_view_on_key (TboToolBase *tool, GtkWidget *widget, TboKeyEvent
 static gboolean delete_selected (TboToolSelector *self);
 static void open_text_editor (TboToolSelector *self, TboObjectText *text);
 static void finalize (GObject *object);
+static void tbo_tool_selector_set_selected_frame_pointer (TboToolSelector *self, Frame *frame);
+static void tbo_tool_selector_set_selected_object_pointer (TboToolSelector *self, TboObjectBase *obj);
+
+#define MIN_FRAME_DIMENSION 1
+#define MIN_OBJECT_DIMENSION 1
+#define ANGLE_EPSILON 1e-9
+
+static gint
+clamp_frame_dimension (gint value)
+{
+    return MAX (MIN_FRAME_DIMENSION, value);
+}
+
+static gint
+clamp_object_dimension (gint value)
+{
+    return MAX (MIN_OBJECT_DIMENSION, value);
+}
+
+static gboolean
+frame_geometry_changed (TboToolSelector *tool)
+{
+    Frame *frame = tool->selected_frame;
+
+    return frame != NULL &&
+           (tool->start_m_x != tbo_frame_get_x (frame) ||
+            tool->start_m_y != tbo_frame_get_y (frame) ||
+            tool->start_m_w != tbo_frame_get_width (frame) ||
+            tool->start_m_h != tbo_frame_get_height (frame));
+}
+
+static gboolean
+object_geometry_changed (TboToolSelector *tool)
+{
+    TboObjectBase *obj = tool->selected_object;
+
+    return obj != NULL &&
+           (tool->start_m_x != obj->x ||
+            tool->start_m_y != obj->y ||
+            tool->start_m_w != obj->width ||
+            tool->start_m_h != obj->height ||
+            fabs (tool->start_m_angle - obj->angle) > ANGLE_EPSILON);
+}
 
 /* Definitions */
 
@@ -64,27 +107,149 @@ static gboolean
 update_selected_cb (GtkSpinButton *widget, TboToolSelector *tool)
 {
     TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (tool)->tbo->drawing);
+    TboWindow *tbo = TBO_TOOL_BASE (tool)->tbo;
+    GdkRGBA old_color;
+    gint old_x;
+    gint old_y;
+    gint old_width;
+    gint old_height;
+    gboolean old_border;
+    gint x;
+    gint y;
+    gint width;
+    gint height;
+
     if (tool->resizing || tool->clicked || tool->selected_frame == NULL || tool->spin_x == NULL)
         return FALSE;
 
-    tool->selected_frame->x = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (tool->spin_x));
-    tool->selected_frame->y = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (tool->spin_y));
-    tool->selected_frame->width = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (tool->spin_w));
-    tool->selected_frame->height = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (tool->spin_h));
+    x = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (tool->spin_x));
+    y = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (tool->spin_y));
+    width = clamp_frame_dimension (gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (tool->spin_w)));
+    height = clamp_frame_dimension (gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (tool->spin_h)));
 
+    if (x == tbo_frame_get_x (tool->selected_frame) &&
+        y == tbo_frame_get_y (tool->selected_frame) &&
+        width == tbo_frame_get_width (tool->selected_frame) &&
+        height == tbo_frame_get_height (tool->selected_frame))
+        return FALSE;
+
+    old_x = tbo_frame_get_x (tool->selected_frame);
+    old_y = tbo_frame_get_y (tool->selected_frame);
+    old_width = tbo_frame_get_width (tool->selected_frame);
+    old_height = tbo_frame_get_height (tool->selected_frame);
+    old_border = tbo_frame_get_border (tool->selected_frame);
+    tbo_frame_get_color (tool->selected_frame, &old_color);
+
+    tbo_frame_set_bounds (tool->selected_frame,
+                          x,
+                          y,
+                          width,
+                          height);
+
+    tbo_undo_stack_insert (tbo->undo_stack,
+                           tbo_action_frame_state_new (tool->selected_frame,
+                                                       old_x,
+                                                       old_y,
+                                                       old_width,
+                                                       old_height,
+                                                       old_border,
+                                                       old_color.red,
+                                                       old_color.green,
+                                                       old_color.blue,
+                                                       x,
+                                                       y,
+                                                       width,
+                                                       height,
+                                                       old_border,
+                                                       old_color.red,
+                                                       old_color.green,
+                                                       old_color.blue));
+    tbo_window_mark_dirty (tbo);
+    tbo_toolbar_update (tbo->toolbar);
     tbo_drawing_update (drawing);
     return FALSE;
+}
+
+static void
+tbo_tool_selector_set_selected_frame_pointer (TboToolSelector *self, Frame *frame)
+{
+    if (self->selected_frame == frame)
+        return;
+
+    if (self->selected_frame != NULL)
+    {
+        g_object_remove_weak_pointer (G_OBJECT (self->selected_frame),
+                                      (gpointer *) &self->selected_frame);
+    }
+
+    self->selected_frame = frame;
+
+    if (self->selected_frame != NULL)
+    {
+        g_object_add_weak_pointer (G_OBJECT (self->selected_frame),
+                                   (gpointer *) &self->selected_frame);
+    }
+}
+
+static void
+tbo_tool_selector_set_selected_object_pointer (TboToolSelector *self, TboObjectBase *obj)
+{
+    if (self->selected_object == obj)
+        return;
+
+    if (self->selected_object != NULL)
+    {
+        g_object_remove_weak_pointer (G_OBJECT (self->selected_object),
+                                      (gpointer *) &self->selected_object);
+    }
+
+    self->selected_object = obj;
+
+    if (self->selected_object != NULL)
+    {
+        g_object_add_weak_pointer (G_OBJECT (self->selected_object),
+                                   (gpointer *) &self->selected_object);
+    }
 }
 
 static void
 update_color_cb (GtkWidget *button, GParamSpec *pspec, TboToolSelector *tool)
 {
     TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (tool)->tbo->drawing);
+    TboWindow *tbo = TBO_TOOL_BASE (tool)->tbo;
+    GdkRGBA current_color;
+    gboolean border;
     if (tool->resizing || tool->clicked || tool->selected_frame == NULL)
         return;
 
     const GdkRGBA *color = gtk_color_dialog_button_get_rgba (GTK_COLOR_DIALOG_BUTTON (button));
+    tbo_frame_get_color (tool->selected_frame, &current_color);
+    if (gdk_rgba_equal (&current_color, color))
+        return;
+
+    border = tbo_frame_get_border (tool->selected_frame);
+
     tbo_frame_set_color (tool->selected_frame, (GdkRGBA *) color);
+    tbo_undo_stack_insert (tbo->undo_stack,
+                           tbo_action_frame_state_new (tool->selected_frame,
+                                                       tbo_frame_get_x (tool->selected_frame),
+                                                       tbo_frame_get_y (tool->selected_frame),
+                                                       tbo_frame_get_width (tool->selected_frame),
+                                                       tbo_frame_get_height (tool->selected_frame),
+                                                       border,
+                                                       current_color.red,
+                                                       current_color.green,
+                                                       current_color.blue,
+                                                       tbo_frame_get_x (tool->selected_frame),
+                                                       tbo_frame_get_y (tool->selected_frame),
+                                                       tbo_frame_get_width (tool->selected_frame),
+                                                       tbo_frame_get_height (tool->selected_frame),
+                                                       border,
+                                                       color->red,
+                                                       color->green,
+                                                       color->blue));
+    tbo_window_mark_dirty (tbo);
+    tbo_toolbar_update (tbo->toolbar);
     tbo_drawing_update (drawing);
 }
 
@@ -92,10 +257,39 @@ static gboolean
 update_border_cb (GtkCheckButton *button, TboToolSelector *tool)
 {
     TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (tool)->tbo->drawing);
+    TboWindow *tbo = TBO_TOOL_BASE (tool)->tbo;
+    gboolean border;
+    GdkRGBA color;
     if (tool->resizing || tool->clicked || tool->selected_frame == NULL)
         return FALSE;
 
-    tool->selected_frame->border = gtk_check_button_get_active (button);
+    border = gtk_check_button_get_active (button);
+    if (tbo_frame_get_border (tool->selected_frame) == border)
+        return FALSE;
+
+    tbo_frame_get_color (tool->selected_frame, &color);
+
+    tbo_frame_set_border (tool->selected_frame, border);
+    tbo_undo_stack_insert (tbo->undo_stack,
+                           tbo_action_frame_state_new (tool->selected_frame,
+                                                       tbo_frame_get_x (tool->selected_frame),
+                                                       tbo_frame_get_y (tool->selected_frame),
+                                                       tbo_frame_get_width (tool->selected_frame),
+                                                       tbo_frame_get_height (tool->selected_frame),
+                                                       !border,
+                                                       color.red,
+                                                       color.green,
+                                                       color.blue,
+                                                       tbo_frame_get_x (tool->selected_frame),
+                                                       tbo_frame_get_y (tool->selected_frame),
+                                                       tbo_frame_get_width (tool->selected_frame),
+                                                       tbo_frame_get_height (tool->selected_frame),
+                                                       border,
+                                                       color.red,
+                                                       color.green,
+                                                       color.blue));
+    tbo_window_mark_dirty (tbo);
+    tbo_toolbar_update (tbo->toolbar);
     tbo_drawing_update (drawing);
     return FALSE;
 }
@@ -108,13 +302,21 @@ update_tool_area (TboToolSelector *self)
     GtkWidget *label;
     GdkRGBA gdk_color = { 0, 0, 0, 1 };
     GtkColorDialog *color_dialog;
+    int frame_x, frame_y, frame_width, frame_height;
+
+    tbo_frame_get_bounds (self->selected_frame, &frame_x, &frame_y, &frame_width, &frame_height);
+    tbo_frame_get_color (self->selected_frame, &gdk_color);
 
     if (!self->spin_x)
     {
-        self->spin_x = add_spin_with_label (toolarea, "x: ", self->selected_frame->x);
-        self->spin_y = add_spin_with_label (toolarea, "y: ", self->selected_frame->y);
-        self->spin_w = add_spin_with_label (toolarea, "w: ", self->selected_frame->width);
-        self->spin_h = add_spin_with_label (toolarea, "h: ", self->selected_frame->height);
+        self->spin_x = add_spin_with_label (toolarea, "x: ", frame_x);
+        self->spin_y = add_spin_with_label (toolarea, "y: ", frame_y);
+        self->spin_w = add_spin_with_label (toolarea, "w: ", frame_width);
+        self->spin_h = add_spin_with_label (toolarea, "h: ", frame_height);
+        gtk_spin_button_set_range (GTK_SPIN_BUTTON (self->spin_x), -10000, 10000);
+        gtk_spin_button_set_range (GTK_SPIN_BUTTON (self->spin_y), -10000, 10000);
+        gtk_spin_button_set_range (GTK_SPIN_BUTTON (self->spin_w), MIN_FRAME_DIMENSION, 10000);
+        gtk_spin_button_set_range (GTK_SPIN_BUTTON (self->spin_h), MIN_FRAME_DIMENSION, 10000);
 
         g_signal_connect (self->spin_x, "value-changed", G_CALLBACK (update_selected_cb), self);
         g_signal_connect (self->spin_y, "value-changed", G_CALLBACK (update_selected_cb), self);
@@ -127,9 +329,6 @@ update_tool_area (TboToolSelector *self)
         gtk_label_set_yalign (GTK_LABEL (label), 0.5);
         color_dialog = gtk_color_dialog_new ();
         self->color_button = gtk_color_dialog_button_new (color_dialog);
-        gdk_color.red = self->selected_frame->color->r;
-        gdk_color.green = self->selected_frame->color->g;
-        gdk_color.blue = self->selected_frame->color->b;
         gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->color_button), &gdk_color);
 
         tbo_box_pack_start (hpanel, label, TRUE, TRUE, 5);
@@ -138,21 +337,18 @@ update_tool_area (TboToolSelector *self)
         g_signal_connect (self->color_button, "notify::rgba", G_CALLBACK (update_color_cb), self);
 
         self->border_button = gtk_check_button_new_with_label (_("border"));
-        gtk_check_button_set_active (GTK_CHECK_BUTTON (self->border_button), self->selected_frame->border);
+        gtk_check_button_set_active (GTK_CHECK_BUTTON (self->border_button), tbo_frame_get_border (self->selected_frame));
         tbo_box_pack_start (toolarea, self->border_button, FALSE, FALSE, 5);
         g_signal_connect (self->border_button, "toggled", G_CALLBACK (update_border_cb), self);
 
         tbo_widget_show_all (toolarea);
     }
 
-    gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_x), self->selected_frame->x);
-    gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_y), self->selected_frame->y);
-    gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_w), self->selected_frame->width);
-    gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_h), self->selected_frame->height);
-    gtk_check_button_set_active (GTK_CHECK_BUTTON (self->border_button), self->selected_frame->border);
-    gdk_color.red = self->selected_frame->color->r;
-    gdk_color.green = self->selected_frame->color->g;
-    gdk_color.blue = self->selected_frame->color->b;
+    gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_x), frame_x);
+    gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_y), frame_y);
+    gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_w), frame_width);
+    gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_h), frame_height);
+    gtk_check_button_set_active (GTK_CHECK_BUTTON (self->border_button), tbo_frame_get_border (self->selected_frame));
     gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->color_button), &gdk_color);
 }
 
@@ -192,8 +388,8 @@ static gboolean
 over_resizer (TboToolSelector *self, Frame *frame, int x, int y)
 {
     int rx, ry;
-    rx = frame->x + frame->width;
-    ry = frame->y + frame->height;
+    rx = tbo_frame_get_x (frame) + tbo_frame_get_width (frame);
+    ry = tbo_frame_get_y (frame) + tbo_frame_get_height (frame);
 
     float r_size;
     r_size = R_SIZE / tbo_drawing_get_zoom (TBO_DRAWING (TBO_TOOL_BASE (self)->tbo->drawing));
@@ -262,13 +458,6 @@ over_rotater_obj (TboToolSelector *self, TboObjectBase *obj, int x, int y)
 }
 
 static gboolean
-moved_frame (TboToolSelector *tool)
-{
-    Frame *obj = tool->selected_frame;
-    return (tool->start_m_x != obj->x || tool->start_m_y != obj->y);
-}
-
-static gboolean
 moved_object (TboToolSelector *tool)
 {
     TboObjectBase *obj = tool->selected_object;
@@ -309,23 +498,35 @@ on_release (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
     TboWindow *tbo = tool->tbo;
     gboolean should_open_text_editor = FALSE;
     // TODO create undo actions for movements / resizing and rotating
-    if (self->selected_object && moved_object (self)) {
+    if (object_geometry_changed (self)) {
         tbo_undo_stack_insert (tbo->undo_stack,
-                               tbo_action_object_move_new (self->selected_object,
-                                                           self->start_m_x,
-                                                           self->start_m_y,
-                                                           self->selected_object->x,
-                                                           self->selected_object->y));
+                               tbo_action_object_transform_new (self->selected_object,
+                                                                self->start_m_x,
+                                                                self->start_m_y,
+                                                                self->start_m_w,
+                                                                self->start_m_h,
+                                                                self->start_m_angle,
+                                                                self->selected_object->x,
+                                                                self->selected_object->y,
+                                                                self->selected_object->width,
+                                                                 self->selected_object->height,
+                                                                 self->selected_object->angle));
         tbo_window_mark_dirty (tbo);
+        tbo_toolbar_update (tbo->toolbar);
     }
-    else if (self->selected_frame && moved_frame (self)) {
+    else if (frame_geometry_changed (self)) {
         tbo_undo_stack_insert (tbo->undo_stack,
-                               tbo_action_frame_move_new (self->selected_frame,
-                                                          self->start_m_x,
-                                                          self->start_m_y,
-                                                            self->selected_frame->x,
-                                                            self->selected_frame->y));
+                               tbo_action_frame_transform_new (self->selected_frame,
+                                                               self->start_m_x,
+                                                               self->start_m_y,
+                                                               self->start_m_w,
+                                                               self->start_m_h,
+                                                               tbo_frame_get_x (self->selected_frame),
+                                                               tbo_frame_get_y (self->selected_frame),
+                                                                tbo_frame_get_width (self->selected_frame),
+                                                                tbo_frame_get_height (self->selected_frame)));
         tbo_window_mark_dirty (tbo);
+        tbo_toolbar_update (tbo->toolbar);
     }
 
     should_open_text_editor = self->edit_text_on_release &&
@@ -378,18 +579,25 @@ delete_selected (TboToolSelector *self)
 
     if (obj != NULL && tbo_drawing_get_current_frame (drawing) != NULL)
     {
+        gint index = tbo_frame_object_nth (frame, obj);
+        tbo_tool_selector_set_selected_object_pointer (self, NULL);
         tbo_frame_del_obj (frame, obj);
-        self->selected_object = NULL;
+        tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_remove_new (frame, obj, index));
         tbo_window_mark_dirty (tbo);
+        tbo_toolbar_update (tbo->toolbar);
         update_menubar (tbo);
         return TRUE;
     }
 
     if (frame != NULL && tbo_drawing_get_current_frame (drawing) == NULL)
     {
+        gint index = tbo_page_frame_nth (page, frame);
         tbo_page_del_frame (page, frame);
+        tbo_undo_stack_insert (tbo->undo_stack, tbo_action_frame_remove_new (page, frame, index));
         tbo_tool_selector_set_selected (self, NULL);
         tbo_window_mark_dirty (tbo);
+        tbo_window_refresh_status (tbo);
+        tbo_toolbar_update (tbo->toolbar);
         return TRUE;
     }
 
@@ -442,8 +650,8 @@ frame_view_on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event
             // resizing object
             if (self->resizing)
             {
-                self->selected_object->width = self->start_m_w - offset_x;
-                self->selected_object->height = self->start_m_h - offset_y;
+                self->selected_object->width = clamp_object_dimension (self->start_m_w - offset_x);
+                self->selected_object->height = clamp_object_dimension (self->start_m_h - offset_y);
             }
             else if (self->rotating)
             {
@@ -468,6 +676,7 @@ frame_view_on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event
             self->start_m_y = self->selected_object->y;
             self->start_m_w = self->selected_object->width;
             self->start_m_h = self->selected_object->height;
+            self->start_m_angle = self->selected_object->angle;
         }
 
         tbo_object_group_set_vars (self->selected_object);
@@ -524,7 +733,7 @@ frame_view_on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *even
     {
         frame = tbo_drawing_get_current_frame (drawing);
 
-        for (obj_list = g_list_first (frame->objects); obj_list; obj_list = obj_list->next)
+        for (obj_list = tbo_frame_get_objects (frame); obj_list; obj_list = obj_list->next)
         {
             obj = TBO_OBJECT_BASE (obj_list->data);
             tbo_object_group_set_vars (obj);
@@ -572,6 +781,7 @@ frame_view_on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *even
         self->start_m_y = self->selected_object->y;
         self->start_m_w = self->selected_object->width;
         self->start_m_h = self->selected_object->height;
+        self->start_m_angle = self->selected_object->angle;
     }
     self->clicked = TRUE;
 }
@@ -596,13 +806,13 @@ frame_view_drawing (TboToolBase *tool, cairo_t *cr)
 
     if (current_obj != NULL && !G_IS_OBJECT (current_obj))
     {
-        self->selected_object = NULL;
+        tbo_tool_selector_set_selected_object_pointer (self, NULL);
         current_obj = NULL;
     }
 
-    if (current_obj != NULL && frame != NULL && g_list_find (frame->objects, current_obj) == NULL)
+    if (current_obj != NULL && frame != NULL && !tbo_frame_has_obj (frame, current_obj))
     {
-        self->selected_object = NULL;
+        tbo_tool_selector_set_selected_object_pointer (self, NULL);
         current_obj = NULL;
     }
 
@@ -705,6 +915,12 @@ frame_view_on_key (TboToolBase *tool, GtkWidget *widget, TboKeyEvent event)
 
     if (current_obj != NULL)
     {
+        int x1 = current_obj->x;
+        int y1 = current_obj->y;
+        int width1 = current_obj->width;
+        int height1 = current_obj->height;
+        gdouble angle1 = current_obj->angle;
+
         switch (event.keyval)
         {
             case GDK_KEY_less:
@@ -728,6 +944,28 @@ frame_view_on_key (TboToolBase *tool, GtkWidget *widget, TboKeyEvent event)
             default:
                 break;
         }
+
+        if (x1 != current_obj->x ||
+            y1 != current_obj->y ||
+            width1 != current_obj->width ||
+            height1 != current_obj->height ||
+            fabs (angle1 - current_obj->angle) > ANGLE_EPSILON)
+        {
+            tbo_undo_stack_insert (tool->tbo->undo_stack,
+                                   tbo_action_object_transform_new (current_obj,
+                                                                    x1,
+                                                                    y1,
+                                                                    width1,
+                                                                    height1,
+                                                                    angle1,
+                                                                    current_obj->x,
+                                                                    current_obj->y,
+                                                                    current_obj->width,
+                                                                    current_obj->height,
+                                                                    current_obj->angle));
+            tbo_window_mark_dirty (tool->tbo);
+            tbo_toolbar_update (tool->tbo->toolbar);
+        }
     }
     tbo_drawing_update (drawing);
 }
@@ -750,12 +988,16 @@ page_view_drawing (TboToolBase *tool, cairo_t *cr)
 
     if (selected != NULL)
     {
+        int selected_x = tbo_frame_get_x (selected);
+        int selected_y = tbo_frame_get_y (selected);
+        int selected_width = tbo_frame_get_width (selected);
+        int selected_height = tbo_frame_get_height (selected);
+
         cairo_set_antialias (cr, CAIRO_ANTIALIAS_NONE);
         cairo_set_line_width (cr, 1);
         cairo_set_dash (cr, dashes, G_N_ELEMENTS (dashes), 0);
         cairo_set_source_rgb (cr, border.r, border.g, border.b);
-        cairo_rectangle (cr, selected->x, selected->y,
-                selected->width, selected->height);
+        cairo_rectangle (cr, selected_x, selected_y, selected_width, selected_height);
         cairo_stroke (cr);
 
         // resizer
@@ -773,8 +1015,8 @@ page_view_drawing (TboToolBase *tool, cairo_t *cr)
         cairo_set_line_width (cr, 1);
         cairo_set_dash (cr, dashes, 0, 0);
 
-        x = selected->x + selected->width;
-        y = selected->y + selected->height;
+        x = selected_x + selected_width;
+        y = selected_y + selected_height;
 
         r_size = R_SIZE / tbo_drawing_get_zoom (drawing);
         cairo_set_line_width (cr, 1 / tbo_drawing_get_zoom (drawing));
@@ -843,10 +1085,10 @@ page_view_on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event
 
     if (selected)
     {
-        self->start_m_x = selected->x;
-        self->start_m_y = selected->y;
-        self->start_m_w = selected->width;
-        self->start_m_h = selected->height;
+        self->start_m_x = tbo_frame_get_x (selected);
+        self->start_m_y = tbo_frame_get_y (selected);
+        self->start_m_w = tbo_frame_get_width (selected);
+        self->start_m_h = tbo_frame_get_height (selected);
         tbo_page_set_current_frame (page, selected);
     }
     self->clicked = TRUE;
@@ -873,16 +1115,18 @@ page_view_on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
             // resizing frame
             if (self->resizing)
             {
-                selected->width = abs (self->start_m_w - offset_x);
-                selected->height = abs (self->start_m_h - offset_y);
+                tbo_frame_set_size (selected,
+                                    clamp_frame_dimension (abs (self->start_m_w - offset_x)),
+                                    clamp_frame_dimension (abs (self->start_m_h - offset_y)));
 
                 update_tool_area (self);
             }
             // moving frame
             else
             {
-                selected->x = self->start_m_x - offset_x;
-                selected->y = self->start_m_y - offset_y;
+                tbo_frame_set_position (selected,
+                                        self->start_m_x - offset_x,
+                                        self->start_m_y - offset_y);
 
                 update_tool_area (self);
             }
@@ -910,8 +1154,8 @@ page_view_on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
         if (tbo_frame_point_inside ((Frame*)frame_list->data, x, y))
         {
             frame = (Frame*)frame_list->data;
-            x1 = frame->x + (frame->width / 2);
-            y1 = frame->y + (frame->height / 2);
+            x1 = tbo_frame_get_x (frame) + (tbo_frame_get_width (frame) / 2);
+            y1 = tbo_frame_get_y (frame) + (tbo_frame_get_height (frame) / 2);
             tbo_tooltip_set (_("double click or press Enter"), x1, y1, tbo);
             found = TRUE;
         }
@@ -933,6 +1177,7 @@ tbo_tool_selector_init (TboToolSelector *self)
     self->start_m_y = 0;
     self->start_m_w = 0;
     self->start_m_h = 0;
+    self->start_m_angle = 0.0;
     self->clicked = FALSE;
     self->edit_text_on_release = FALSE;
     self->over_resizer = FALSE;
@@ -968,6 +1213,9 @@ static void
 finalize (GObject *object)
 {
     TboToolSelector *self = TBO_TOOL_SELECTOR (object);
+
+    tbo_tool_selector_set_selected_frame_pointer (self, NULL);
+    tbo_tool_selector_set_selected_object_pointer (self, NULL);
 
     if (self->toolarea_widget != NULL)
         g_object_unref (self->toolarea_widget);
@@ -1017,7 +1265,7 @@ tbo_tool_selector_set_selected (TboToolSelector *self, Frame *frame)
         return;
     }
 
-    self->selected_frame = frame;
+    tbo_tool_selector_set_selected_frame_pointer (self, frame);
     if (self->selected_frame != NULL)
         update_tool_area (self);
     update_menubar (TBO_TOOL_BASE (self)->tbo);
@@ -1030,10 +1278,10 @@ tbo_tool_selector_set_selected_obj (TboToolSelector *self, TboObjectBase *obj)
     {
         TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (self)->tbo->drawing);
         Frame *frame = tbo_drawing_get_current_frame (drawing);
-        if (frame != NULL && g_list_find (frame->objects, self->selected_object) != NULL)
+        if (frame != NULL && tbo_frame_has_obj (frame, self->selected_object))
             tbo_frame_del_obj (frame, self->selected_object);
     }
-    self->selected_object = obj;
+    tbo_tool_selector_set_selected_object_pointer (self, obj);
     update_menubar (TBO_TOOL_BASE (self)->tbo);
 }
 
@@ -1043,21 +1291,106 @@ tbo_tool_selector_delete_selected (TboToolSelector *self)
     return delete_selected (self);
 }
 
+void
+tbo_tool_selector_reset_state (TboToolSelector *self)
+{
+    if (self == NULL)
+        return;
+
+    tbo_tool_selector_set_selected_frame_pointer (self, NULL);
+    tbo_tool_selector_set_selected_object_pointer (self, NULL);
+    self->x = 0;
+    self->y = 0;
+    self->start_x = 0;
+    self->start_y = 0;
+    self->start_m_x = 0;
+    self->start_m_y = 0;
+    self->start_m_w = 0;
+    self->start_m_h = 0;
+    self->start_m_angle = 0.0;
+    self->clicked = FALSE;
+    self->edit_text_on_release = FALSE;
+    self->over_resizer = FALSE;
+    self->over_rotater = FALSE;
+    self->resizing = FALSE;
+    self->rotating = FALSE;
+}
+
 
 static void
 frame_move_do (TboAction *act)
 {
     TboActionFrameMove *action = (TboActionFrameMove*)act;
-    action->frame->x = action->x2;
-    action->frame->y = action->y2;
+
+    if (action->frame == NULL)
+        return;
+
+    tbo_frame_set_position (action->frame, action->x2, action->y2);
+}
+
+static void
+frame_transform_do (TboAction *act)
+{
+    TboActionFrameTransform *action = (TboActionFrameTransform *) act;
+
+    if (action->frame == NULL)
+        return;
+
+    tbo_frame_set_bounds (action->frame,
+                          action->x2,
+                          action->y2,
+                          action->width2,
+                          action->height2);
+}
+
+static void
+frame_transform_undo (TboAction *act)
+{
+    TboActionFrameTransform *action = (TboActionFrameTransform *) act;
+
+    if (action->frame == NULL)
+        return;
+
+    tbo_frame_set_bounds (action->frame,
+                          action->x1,
+                          action->y1,
+                          action->width1,
+                          action->height1);
+}
+
+static void
+frame_transform_free (TboAction *act)
+{
+    TboActionFrameTransform *action = (TboActionFrameTransform *) act;
+
+    if (action->frame != NULL)
+    {
+        g_object_remove_weak_pointer (G_OBJECT (action->frame),
+                                      (gpointer *) &action->frame);
+    }
 }
 
 static void
 frame_move_undo (TboAction *act)
 {
     TboActionFrameMove *action = (TboActionFrameMove*)act;
-    action->frame->x = action->x1;
-    action->frame->y = action->y1;
+
+    if (action->frame == NULL)
+        return;
+
+    tbo_frame_set_position (action->frame, action->x1, action->y1);
+}
+
+static void
+frame_move_free (TboAction *act)
+{
+    TboActionFrameMove *action = (TboActionFrameMove*)act;
+
+    if (action->frame != NULL)
+    {
+        g_object_remove_weak_pointer (G_OBJECT (action->frame),
+                                      (gpointer *) &action->frame);
+    }
 }
 
 TboAction *
@@ -1071,23 +1404,128 @@ tbo_action_frame_move_new (Frame *frame, int x1, int y1, int x2, int y2)
     action->y2 = y2;
     action->action_do = frame_move_do;
     action->action_undo = frame_move_undo;
+    action->action_free = frame_move_free;
+
+    if (action->frame != NULL)
+    {
+        g_object_add_weak_pointer (G_OBJECT (action->frame),
+                                   (gpointer *) &action->frame);
+    }
+
     return (TboAction*)action;
+}
+
+TboAction *
+tbo_action_frame_transform_new (Frame *frame,
+                                int x1,
+                                int y1,
+                                int width1,
+                                int height1,
+                                int x2,
+                                int y2,
+                                int width2,
+                                int height2)
+{
+    TboActionFrameTransform *action = (TboActionFrameTransform *) tbo_action_new (TboActionFrameTransform);
+
+    action->frame = frame;
+    action->x1 = x1;
+    action->y1 = y1;
+    action->width1 = width1;
+    action->height1 = height1;
+    action->x2 = x2;
+    action->y2 = y2;
+    action->width2 = width2;
+    action->height2 = height2;
+    action->action_do = frame_transform_do;
+    action->action_undo = frame_transform_undo;
+    action->action_free = frame_transform_free;
+
+    if (action->frame != NULL)
+    {
+        g_object_add_weak_pointer (G_OBJECT (action->frame),
+                                   (gpointer *) &action->frame);
+    }
+
+    return (TboAction *) action;
 }
 
 static void
 obj_move_do (TboAction *act)
 {
     TboActionObjMove *action = (TboActionObjMove*)act;
+
+    if (action->obj == NULL)
+        return;
+
     action->obj->x = action->x2;
     action->obj->y = action->y2;
+}
+
+static void
+obj_transform_do (TboAction *act)
+{
+    TboActionObjTransform *action = (TboActionObjTransform *) act;
+
+    if (action->obj == NULL)
+        return;
+
+    action->obj->x = action->x2;
+    action->obj->y = action->y2;
+    action->obj->width = action->width2;
+    action->obj->height = action->height2;
+    action->obj->angle = action->angle2;
+}
+
+static void
+obj_transform_undo (TboAction *act)
+{
+    TboActionObjTransform *action = (TboActionObjTransform *) act;
+
+    if (action->obj == NULL)
+        return;
+
+    action->obj->x = action->x1;
+    action->obj->y = action->y1;
+    action->obj->width = action->width1;
+    action->obj->height = action->height1;
+    action->obj->angle = action->angle1;
+}
+
+static void
+obj_transform_free (TboAction *act)
+{
+    TboActionObjTransform *action = (TboActionObjTransform *) act;
+
+    if (action->obj != NULL)
+    {
+        g_object_remove_weak_pointer (G_OBJECT (action->obj),
+                                      (gpointer *) &action->obj);
+    }
 }
 
 static void
 obj_move_undo (TboAction *act)
 {
     TboActionObjMove *action = (TboActionObjMove*)act;
+
+    if (action->obj == NULL)
+        return;
+
     action->obj->x = action->x1;
     action->obj->y = action->y1;
+}
+
+static void
+obj_move_free (TboAction *act)
+{
+    TboActionObjMove *action = (TboActionObjMove*)act;
+
+    if (action->obj != NULL)
+    {
+        g_object_remove_weak_pointer (G_OBJECT (action->obj),
+                                      (gpointer *) &action->obj);
+    }
 }
 
 TboAction *
@@ -1101,5 +1539,52 @@ tbo_action_object_move_new (TboObjectBase *object, int x1, int y1, int x2, int y
     action->y2 = y2;
     action->action_do = obj_move_do;
     action->action_undo = obj_move_undo;
+    action->action_free = obj_move_free;
+
+    if (action->obj != NULL)
+    {
+        g_object_add_weak_pointer (G_OBJECT (action->obj),
+                                   (gpointer *) &action->obj);
+    }
+
     return (TboAction*)action;
+}
+
+TboAction *
+tbo_action_object_transform_new (TboObjectBase *object,
+                                 int x1,
+                                 int y1,
+                                 int width1,
+                                 int height1,
+                                 gdouble angle1,
+                                 int x2,
+                                 int y2,
+                                 int width2,
+                                 int height2,
+                                 gdouble angle2)
+{
+    TboActionObjTransform *action = (TboActionObjTransform *) tbo_action_new (TboActionObjTransform);
+
+    action->obj = object;
+    action->x1 = x1;
+    action->y1 = y1;
+    action->width1 = width1;
+    action->height1 = height1;
+    action->angle1 = angle1;
+    action->x2 = x2;
+    action->y2 = y2;
+    action->width2 = width2;
+    action->height2 = height2;
+    action->angle2 = angle2;
+    action->action_do = obj_transform_do;
+    action->action_undo = obj_transform_undo;
+    action->action_free = obj_transform_free;
+
+    if (action->obj != NULL)
+    {
+        g_object_add_weak_pointer (G_OBJECT (action->obj),
+                                   (gpointer *) &action->obj);
+    }
+
+    return (TboAction *) action;
 }

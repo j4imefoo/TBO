@@ -111,6 +111,206 @@ asset_bounds_check = executable(
   install: false
 )
 
+document_state_reset_check = executable(
+  'document-state-reset-check',
+  common_sources + files('tests/document_state_reset_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+model_current_state_check = executable(
+  'model-current-state-check',
+  common_sources + files('tests/model_current_state_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+frame_gobject_lifetime_check = executable(
+  'frame-gobject-lifetime-check',
+  common_sources + files('tests/frame_gobject_lifetime_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+page_gobject_lifetime_check = executable(
+  'page-gobject-lifetime-check',
+  common_sources + files('tests/page_gobject_lifetime_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+comic_gobject_lifetime_check = executable(
+  'comic-gobject-lifetime-check',
+  common_sources + files('tests/comic_gobject_lifetime_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+ascii_locale_roundtrip_check = executable(
+  'ascii-locale-roundtrip-check',
+  common_sources + files('tests/ascii_locale_roundtrip_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+legacy_decimal_load_check = executable(
+  'legacy-decimal-load-check',
+  common_sources + files('tests/legacy_decimal_load_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+dirty_state_check = executable(
+  'dirty-state-check',
+  common_sources + files('tests/dirty_state_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+resize_rotate_undo_check = executable(
+  'resize-rotate-undo-check',
+  common_sources + files('tests/resize_rotate_undo_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+xml_roundtrip_check = executable(
+  'xml-roundtrip-check',
+  common_sources + files('tests/xml_roundtrip_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+invalid_tbo_check = executable(
+  'invalid-tbo-check',
+  common_sources + files('tests/invalid_tbo_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+i18n_check = executable(
+  'i18n-check',
+  common_sources + files('tests/i18n_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+export_result_check = executable(
+  'export-result-check',
+  common_sources + files('tests/export_result_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+page_status_check = executable(
+  'page-status-check',
+  common_sources + files('tests/page_status_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+clone_dirty_check = executable(
+  'clone-dirty-check',
+  common_sources + files('tests/clone_dirty_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+enter_frame_key_check = executable(
+  'enter-frame-key-check',
+  common_sources + files('tests/enter_frame_key_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+frame_count_status_check = executable(
+  'frame-count-status-check',
+  common_sources + files('tests/frame_count_status_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+export_formats_check = executable(
+  'export-formats-check',
+  common_sources + files('tests/export_formats_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+invalid_tbo_variants_check = executable(
+  'invalid-tbo-variants-check',
+  common_sources + files('tests/invalid_tbo_variants_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+tooltip_scope_check = executable(
+  'tooltip-scope-check',
+  common_sources + files('tests/tooltip_scope_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+toolbar_save_button_check = executable(
+  'toolbar-save-button-check',
+  common_sources + files('tests/toolbar_save_button_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+status_hierarchy_check = executable(
+  'status-hierarchy-check',
+  common_sources + files('tests/status_hierarchy_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+create_undo_check = executable(
+  'create-undo-check',
+  common_sources + files('tests/create_undo_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+page_undo_check = executable(
+  'page-undo-check',
+  common_sources + files('tests/page_undo_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+text_undo_check = executable(
+  'text-undo-check',
+  common_sources + files('tests/text_undo_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
 test(
   'load-render-check',
   load_render_check,
@@ -136,6 +336,161 @@ test(
   'asset-bounds-check',
   asset_bounds_check,
   args: [join_paths(meson.project_source_root(), 'data', 'tut.tbo')],
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'document-state-reset-check',
+  document_state_reset_check,
+  args: [join_paths(meson.project_source_root(), 'data', 'tut.tbo')],
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'model-current-state-check',
+  model_current_state_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'frame-gobject-lifetime-check',
+  frame_gobject_lifetime_check,
+  args: [join_paths(meson.project_source_root(), 'data', 'tut.tbo')],
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'page-gobject-lifetime-check',
+  page_gobject_lifetime_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'comic-gobject-lifetime-check',
+  comic_gobject_lifetime_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'ascii-locale-roundtrip-check',
+  ascii_locale_roundtrip_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'legacy-decimal-load-check',
+  legacy_decimal_load_check,
+  args: [join_paths(meson.project_source_root(), 'data', 'tut.tbo')],
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'dirty-state-check',
+  dirty_state_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'resize-rotate-undo-check',
+  resize_rotate_undo_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'xml-roundtrip-check',
+  xml_roundtrip_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'invalid-tbo-check',
+  invalid_tbo_check,
+  args: [join_paths(meson.project_source_root(), 'data', 'tut.tbo')],
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'i18n-check',
+  i18n_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'export-result-check',
+  export_result_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'page-status-check',
+  page_status_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'clone-dirty-check',
+  clone_dirty_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'enter-frame-key-check',
+  enter_frame_key_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'frame-count-status-check',
+  frame_count_status_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'export-formats-check',
+  export_formats_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'invalid-tbo-variants-check',
+  invalid_tbo_variants_check,
+  args: [join_paths(meson.project_source_root(), 'data', 'tut.tbo')],
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'tooltip-scope-check',
+  tooltip_scope_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'toolbar-save-button-check',
+  toolbar_save_button_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'status-hierarchy-check',
+  status_hierarchy_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'create-undo-check',
+  create_undo_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'page-undo-check',
+  page_undo_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'text-undo-check',
+  text_undo_check,
   env: ['G_DEBUG=fatal-criticals']
 )
 

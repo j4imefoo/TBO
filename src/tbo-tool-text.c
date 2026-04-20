@@ -24,6 +24,7 @@
 #include "tbo-object-base.h"
 #include "tbo-tool-selector.h"
 #include "tbo-tool-text.h"
+#include "tbo-undo.h"
 
 G_DEFINE_TYPE (TboToolText, tbo_tool_text, TBO_TYPE_TOOL_BASE);
 
@@ -39,6 +40,71 @@ static void finalize (GObject *object);
 static gint tbo_tool_text_get_font_size (TboToolText *self);
 static gchar *tbo_tool_text_build_font (TboToolText *self);
 static void tbo_tool_text_sync_font_controls (TboToolText *self, const gchar *font_string);
+static void on_text_begin_user_action (GtkTextBuffer *buf, TboToolText *self);
+static void on_text_end_user_action (GtkTextBuffer *buf, TboToolText *self);
+static void tbo_tool_text_capture_state (TboToolText *self);
+static void tbo_tool_text_clear_capture_state (TboToolText *self);
+static gboolean flush_pending_text_change (gpointer data);
+
+static void
+tbo_tool_text_capture_state (TboToolText *self)
+{
+    if (self->text_selected == NULL || self->captured_text != NULL)
+        return;
+
+    self->captured_text = g_strdup (tbo_object_text_get_text (self->text_selected));
+    self->captured_font = tbo_object_text_get_string (self->text_selected);
+    self->captured_color = *self->text_selected->font_color;
+}
+
+static void
+tbo_tool_text_clear_capture_state (TboToolText *self)
+{
+    g_clear_pointer (&self->captured_text, g_free);
+    g_clear_pointer (&self->captured_font, g_free);
+}
+
+static gboolean
+flush_pending_text_change (gpointer data)
+{
+    TboToolText *self = TBO_TOOL_TEXT (data);
+    TboWindow *tbo = TBO_TOOL_BASE (self)->tbo;
+    gchar *text;
+    gchar *font;
+    GtkTextIter start, end;
+
+    self->pending_text_change_id = 0;
+
+    if (self->text_selected == NULL || self->captured_text == NULL)
+    {
+        tbo_tool_text_clear_capture_state (self);
+        return G_SOURCE_REMOVE;
+    }
+
+    gtk_text_buffer_get_start_iter (self->text_buffer, &start);
+    gtk_text_buffer_get_end_iter (self->text_buffer, &end);
+    text = gtk_text_buffer_get_text (self->text_buffer, &start, &end, FALSE);
+    font = tbo_object_text_get_string (self->text_selected);
+
+    if (g_strcmp0 (self->captured_text, text) != 0)
+    {
+        tbo_undo_stack_insert (tbo->undo_stack,
+                               tbo_action_text_state_new (self->text_selected,
+                                                          self->captured_text,
+                                                          self->captured_font,
+                                                          &self->captured_color,
+                                                          text,
+                                                          font,
+                                                          self->text_selected->font_color));
+        tbo_window_mark_dirty (tbo);
+        tbo_toolbar_update (tbo->toolbar);
+    }
+
+    g_free (text);
+    g_free (font);
+    tbo_tool_text_clear_capture_state (self);
+    return G_SOURCE_REMOVE;
+}
 
 /* Definitions */
 
@@ -59,27 +125,132 @@ on_text_change (GtkTextBuffer *buf, TboToolText *self)
     gtk_text_buffer_get_start_iter (buf, &start);
     gtk_text_buffer_get_end_iter (buf, &end);
 
+    if (self->syncing_controls)
+        return FALSE;
+
     if (self->text_selected)
     {
+        gchar *old_text = g_strdup (tbo_object_text_get_text (self->text_selected));
+        gchar *old_font = tbo_object_text_get_string (self->text_selected);
         gchar *text = gtk_text_buffer_get_text (buf, &start, &end, FALSE);
+
+        if (g_strcmp0 (old_text, text) == 0)
+        {
+            g_free (old_text);
+            g_free (old_font);
+            g_free (text);
+            return FALSE;
+        }
+
+        if (!self->text_capture_active)
+            tbo_tool_text_capture_state (self);
+
         tbo_object_text_set_text (self->text_selected, text);
+        if (!self->text_capture_active)
+        {
+            if (self->pending_text_change_id == 0)
+                self->pending_text_change_id = g_idle_add (flush_pending_text_change, self);
+        }
+        g_free (old_text);
+        g_free (old_font);
         g_free (text);
-        tbo_window_mark_dirty (tbo);
         tbo_drawing_update (TBO_DRAWING (tbo->drawing));
     }
     return FALSE;
 }
 
 static void
+on_text_begin_user_action (GtkTextBuffer *buf, TboToolText *self)
+{
+    (void) buf;
+
+    if (self->syncing_controls || self->text_selected == NULL || self->text_capture_active)
+        return;
+
+    self->text_capture_active = TRUE;
+    tbo_tool_text_capture_state (self);
+}
+
+static void
+on_text_end_user_action (GtkTextBuffer *buf, TboToolText *self)
+{
+    TboWindow *tbo = TBO_TOOL_BASE (self)->tbo;
+    GtkTextIter start, end;
+    gchar *text;
+    gchar *font;
+
+    (void) buf;
+
+    if (!self->text_capture_active || self->text_selected == NULL)
+        return;
+
+    if (self->pending_text_change_id != 0)
+    {
+        g_source_remove (self->pending_text_change_id);
+        self->pending_text_change_id = 0;
+    }
+
+    gtk_text_buffer_get_start_iter (self->text_buffer, &start);
+    gtk_text_buffer_get_end_iter (self->text_buffer, &end);
+    text = gtk_text_buffer_get_text (self->text_buffer, &start, &end, FALSE);
+    font = tbo_object_text_get_string (self->text_selected);
+
+    if (g_strcmp0 (self->captured_text, text) != 0)
+    {
+        tbo_undo_stack_insert (tbo->undo_stack,
+                               tbo_action_text_state_new (self->text_selected,
+                                                          self->captured_text,
+                                                          self->captured_font,
+                                                          &self->captured_color,
+                                                          text,
+                                                          font,
+                                                          self->text_selected->font_color));
+        tbo_window_mark_dirty (tbo);
+        tbo_toolbar_update (tbo->toolbar);
+    }
+
+    g_free (text);
+    g_free (font);
+    tbo_tool_text_clear_capture_state (self);
+    self->text_capture_active = FALSE;
+}
+
+static void
 on_font_change (GtkWidget *widget, GParamSpec *pspec, TboToolText *self)
 {
     TboWindow *tbo = TBO_TOOL_BASE (self)->tbo;
+    if (self->syncing_controls)
+        return;
+
     if (self->text_selected)
     {
+        gchar *old_text = g_strdup (tbo_object_text_get_text (self->text_selected));
+        gchar *old_font = tbo_object_text_get_string (self->text_selected);
+        GdkRGBA old_color = *self->text_selected->font_color;
         gchar *font = tbo_tool_text_build_font (self);
+
+        if (g_strcmp0 (old_font, font) == 0)
+        {
+            g_free (old_text);
+            g_free (old_font);
+            g_free (font);
+            return;
+        }
+
         tbo_object_text_change_font (self->text_selected, font);
+        tbo_undo_stack_insert (tbo->undo_stack,
+                               tbo_action_text_state_new (self->text_selected,
+                                                          old_text,
+                                                          old_font,
+                                                          &old_color,
+                                                          old_text,
+                                                          font,
+                                                          &old_color));
+        g_free (old_text);
+        g_free (old_font);
         g_free (font);
         tbo_window_mark_dirty (tbo);
+        tbo_toolbar_update (tbo->toolbar);
         tbo_drawing_update (TBO_DRAWING (tbo->drawing));
     }
 }
@@ -95,11 +266,36 @@ static void
 on_color_change (GtkWidget *widget, GParamSpec *pspec, TboToolText *self)
 {
     TboWindow *tbo = TBO_TOOL_BASE (self)->tbo;
+    if (self->syncing_controls)
+        return;
+
     if (self->text_selected)
     {
+        gchar *old_text = g_strdup (tbo_object_text_get_text (self->text_selected));
+        gchar *old_font = tbo_object_text_get_string (self->text_selected);
+        GdkRGBA old_color = *self->text_selected->font_color;
         const GdkRGBA *color = gtk_color_dialog_button_get_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color));
+
+        if (gdk_rgba_equal (&old_color, color))
+        {
+            g_free (old_text);
+            g_free (old_font);
+            return;
+        }
+
         tbo_object_text_change_color (self->text_selected, (GdkRGBA *) color);
+        tbo_undo_stack_insert (tbo->undo_stack,
+                               tbo_action_text_state_new (self->text_selected,
+                                                          old_text,
+                                                          old_font,
+                                                          &old_color,
+                                                          old_text,
+                                                          old_font,
+                                                          color));
+        g_free (old_text);
+        g_free (old_font);
         tbo_window_mark_dirty (tbo);
+        tbo_toolbar_update (tbo->toolbar);
         tbo_drawing_update (TBO_DRAWING (tbo->drawing));
     }
 }
@@ -170,6 +366,8 @@ setup_toolarea (TboToolText *self)
     self->text_buffer = gtk_text_view_get_buffer (GTK_TEXT_VIEW (view));
     gtk_text_buffer_set_text (self->text_buffer, "", -1);
     g_signal_connect (self->text_buffer, "changed", G_CALLBACK (on_text_change), self);
+    g_signal_connect (self->text_buffer, "begin-user-action", G_CALLBACK (on_text_begin_user_action), self);
+    g_signal_connect (self->text_buffer, "end-user-action", G_CALLBACK (on_text_end_user_action), self);
     tbo_scrolled_window_set_child (scroll, view);
     tbo_box_pack_start (vbox, scroll, FALSE, FALSE, 5);
 
@@ -222,7 +420,7 @@ on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
         return;
     }
 
-    for (obj_list = g_list_first (frame->objects); obj_list; obj_list = obj_list->next)
+    for (obj_list = tbo_frame_get_objects (frame); obj_list; obj_list = obj_list->next)
     {
         obj = TBO_OBJECT_BASE (obj_list->data);
         if (TBO_IS_OBJECT_TEXT (obj) && tbo_frame_point_inside_obj (obj, x, y))
@@ -236,7 +434,7 @@ on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
         x = tbo_frame_get_base_x (x);
         y = tbo_frame_get_base_y (y);
 
-        if (x < 0 || y < 0 || x > frame->width || y > frame->height)
+        if (x < 0 || y < 0 || x > tbo_frame_get_width (frame) || y > tbo_frame_get_height (frame))
             return;
 
         gchar *font = tbo_tool_text_build_font (self);
@@ -247,7 +445,10 @@ on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
                                                 &color));
         g_free (font);
         tbo_frame_add_obj (frame, TBO_OBJECT_BASE (text));
+        tbo_undo_stack_insert (tool->tbo->undo_stack,
+                               tbo_action_object_add_new (frame, TBO_OBJECT_BASE (text)));
         tbo_window_mark_dirty (tool->tbo);
+        tbo_toolbar_update (tool->tbo->toolbar);
     }
     tbo_tool_text_set_selected (self, text);
     tbo_drawing_update (TBO_DRAWING (tool->tbo->drawing));
@@ -288,6 +489,11 @@ tbo_tool_text_init (TboToolText *self)
     self->font_color = NULL;
     self->text_selected = NULL;
     self->text_buffer = NULL;
+    self->syncing_controls = FALSE;
+    self->text_capture_active = FALSE;
+    self->pending_text_change_id = 0;
+    self->captured_text = NULL;
+    self->captured_font = NULL;
 
     self->parent_instance.on_select = on_select;
     self->parent_instance.on_unselect = on_unselect;
@@ -306,6 +512,12 @@ tbo_tool_text_class_init (TboToolTextClass *klass)
 static void
 finalize (GObject *object)
 {
+    TboToolText *self = TBO_TOOL_TEXT (object);
+
+    if (self->pending_text_change_id != 0)
+        g_source_remove (self->pending_text_change_id);
+    tbo_tool_text_clear_capture_state (self);
+    tbo_tool_text_reset_state (TBO_TOOL_TEXT (object));
     G_OBJECT_CLASS (tbo_tool_text_parent_class)->finalize (object);
 }
 
@@ -412,6 +624,15 @@ tbo_tool_text_set_selected (TboToolText *self, TboObjectText *text)
 {
     char *str;
 
+    if (self->pending_text_change_id != 0)
+    {
+        g_source_remove (self->pending_text_change_id);
+        self->pending_text_change_id = 0;
+    }
+    self->text_capture_active = FALSE;
+    tbo_tool_text_clear_capture_state (self);
+    self->syncing_controls = TRUE;
+
     if (self->text_selected) {
         g_object_unref (self->text_selected);
         self->text_selected = NULL;
@@ -427,6 +648,7 @@ tbo_tool_text_set_selected (TboToolText *self, TboObjectText *text)
             GdkRGBA default_color = { 0, 0, 0, 1 };
             gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color), &default_color);
         }
+        self->syncing_controls = FALSE;
         return;
     }
 
@@ -438,4 +660,27 @@ tbo_tool_text_set_selected (TboToolText *self, TboObjectText *text)
     gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color), text->font_color);
     gtk_text_buffer_set_text (self->text_buffer, str, -1);
     self->text_selected = g_object_ref (text);
+    self->syncing_controls = FALSE;
+}
+
+void
+tbo_tool_text_reset_state (TboToolText *self)
+{
+    if (self == NULL)
+        return;
+
+    if (self->pending_text_change_id != 0)
+    {
+        g_source_remove (self->pending_text_change_id);
+        self->pending_text_change_id = 0;
+    }
+
+    self->text_capture_active = FALSE;
+    tbo_tool_text_clear_capture_state (self);
+
+    if (self->text_selected == NULL)
+        return;
+
+    g_object_unref (self->text_selected);
+    self->text_selected = NULL;
 }

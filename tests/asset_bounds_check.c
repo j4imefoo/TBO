@@ -37,18 +37,24 @@ int main(int argc, char **argv)
     frame = frames->data;
     tbo_window_enter_frame (tbo, frame);
 
-    before = g_list_length (frame->objects);
-    if (tbo_dnd_insert_asset (tbo, "tbo/logo/tbo.svg", frame->width / 2, frame->height / 2) == NULL)
+    before = tbo_frame_object_count (frame);
+    if (tbo_dnd_insert_asset (tbo,
+                              "tbo/logo/tbo.svg",
+                              tbo_frame_get_width (frame) / 2,
+                              tbo_frame_get_height (frame) / 2) == NULL)
         return 5;
 
-    after_inside = g_list_length (frame->objects);
+    after_inside = tbo_frame_object_count (frame);
     if (after_inside != before + 1)
         return 6;
 
-    if (tbo_dnd_insert_asset (tbo, "tbo/logo/tbo.svg", frame->width + 50, frame->height + 50) != NULL)
+    if (tbo_dnd_insert_asset (tbo,
+                              "tbo/logo/tbo.svg",
+                              tbo_frame_get_width (frame) + 50,
+                              tbo_frame_get_height (frame) + 50) != NULL)
         return 7;
 
-    after_outside = g_list_length (frame->objects);
+    after_outside = tbo_frame_object_count (frame);
     if (after_outside != after_inside)
         return 8;
 

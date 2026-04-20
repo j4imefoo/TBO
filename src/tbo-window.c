@@ -25,17 +25,60 @@
 #include "tbo-types.h"
 #include "tbo-window.h"
 #include "comic.h"
+#include "frame.h"
 #include "page.h"
+#include "tbo-object-group.h"
+#include "tbo-object-pixmap.h"
+#include "tbo-object-svg.h"
+#include "tbo-object-text.h"
 #include "ui-menu.h"
 #include "tbo-toolbar.h"
 #include "tbo-drawing.h"
+#include "tbo-tool-frame.h"
 #include "tbo-tool-selector.h"
+#include "tbo-tool-text.h"
 #include "tbo-tooltip.h"
 #include "tbo-utils.h"
 #include "tbo-widget.h"
 #include "comic-saveas-dialog.h"
 
 static gboolean KEY_BINDER = TRUE;
+
+static gboolean on_key_cb (GtkEventControllerKey *controller,
+                           guint keyval,
+                           guint keycode,
+                           GdkModifierType state,
+                           TboWindow *tbo);
+
+static void
+setup_darea_controllers (GtkWidget *darea, TboWindow *tbo)
+{
+    GtkEventController *key;
+
+    tbo_drawing_init_dnd (TBO_DRAWING (darea), tbo);
+
+    key = gtk_event_controller_key_new ();
+    g_signal_connect (key, "key-pressed", G_CALLBACK (on_key_cb), tbo);
+    gtk_widget_add_controller (darea, key);
+}
+
+static void
+detach_document_state (TboWindow *tbo)
+{
+    if (tbo == NULL)
+        return;
+
+    if (tbo->toolbar != NULL && tbo->toolbar->tools != NULL)
+    {
+        tbo_tool_selector_reset_state (TBO_TOOL_SELECTOR (tbo->toolbar->tools[TBO_TOOLBAR_SELECTOR]));
+        tbo_tool_frame_reset_state (TBO_TOOL_FRAME (tbo->toolbar->tools[TBO_TOOLBAR_FRAME]));
+        tbo_tool_text_reset_state (TBO_TOOL_TEXT (tbo->toolbar->tools[TBO_TOOLBAR_TEXT]));
+        tbo->toolbar->selected_tool = NULL;
+    }
+
+    tbo_undo_stack_clear (tbo->undo_stack);
+    tbo_tooltip_reset (tbo);
+}
 
 static void
 apply_theme_preferences (void)
@@ -94,16 +137,44 @@ refresh_page_tab_labels (TboWindow *tbo)
     }
 }
 
+static void
+sync_page_widgets_with_comic (TboWindow *tbo)
+{
+    gint widget_count;
+    gint comic_count;
+
+    if (tbo == NULL)
+        return;
+
+    widget_count = tbo_window_get_page_count (tbo);
+    comic_count = tbo_comic_len (tbo->comic);
+
+    while (widget_count < comic_count)
+    {
+        tbo_window_add_page_widget (tbo, create_darea (tbo));
+        widget_count++;
+    }
+
+    while (widget_count > comic_count)
+    {
+        tbo_window_remove_page_widget (tbo, widget_count - 1);
+        widget_count--;
+    }
+}
+
 static gboolean
 notebook_switch_page_cb (GtkNotebook *notebook,
                          GtkWidget   *page,
                          guint        page_num,
                          TboWindow   *tbo)
 {
+    if (tbo == NULL || tbo->destroying)
+        return FALSE;
+
     tbo_comic_set_current_page_nth (tbo->comic, page_num);
     tbo_window_set_current_tab_page (tbo, FALSE);
     tbo_toolbar_update (tbo->toolbar);
-    tbo_window_update_status (tbo, 0, 0);
+    tbo_window_refresh_status (tbo);
     tbo_drawing_adjust_scroll (TBO_DRAWING (tbo->drawing));
     return FALSE;
 }
@@ -203,24 +274,123 @@ confirm_close (TboWindow *tbo)
 }
 
 static void
-update_statusbar (TboWindow *tbo, int x, int y)
+append_status_segment (GString *status, const gchar *segment)
 {
-    char buffer[200];
-    gboolean in_frame_view = tbo_drawing_get_current_frame (TBO_DRAWING (tbo->drawing)) != NULL;
+    if (segment == NULL || *segment == '\0')
+        return;
 
-    if (in_frame_view)
+    if (status->len > 0)
+        g_string_append (status, " | ");
+
+    g_string_append (status, segment);
+}
+
+static gint
+frame_index_for_status (Page *page, Frame *frame)
+{
+    GList *frames;
+    gint index = 1;
+
+    if (page == NULL || frame == NULL)
+        return 0;
+
+    for (frames = tbo_page_get_frames (page); frames != NULL; frames = frames->next, index++)
     {
-        snprintf (buffer, 200, _("editing frame [ %5d,%5d ] | Esc: back to page"), x, y);
+        if (frames->data == frame)
+            return index;
+    }
+
+    return 0;
+}
+
+static const gchar *
+object_label_for_status (TboObjectBase *obj)
+{
+    if (obj == NULL)
+        return NULL;
+    if (TBO_IS_OBJECT_TEXT (obj))
+        return _("Text");
+    if (TBO_IS_OBJECT_SVG (obj))
+        return _("SVG image");
+    if (TBO_IS_OBJECT_PIXMAP (obj))
+        return _("Image");
+    if (TBO_IS_OBJECT_GROUP (obj))
+        return _("Group");
+
+    return _("Object");
+}
+
+static void
+update_statusbar (TboWindow *tbo)
+{
+    GString *status;
+    Page *page;
+    TboToolSelector *selector = NULL;
+    Frame *selected_frame = NULL;
+    Frame *current_frame;
+    TboObjectBase *selected_object = NULL;
+    gint frame_index;
+    gchar *segment;
+
+    page = tbo_comic_get_current_page (tbo->comic);
+    current_frame = tbo_drawing_get_current_frame (TBO_DRAWING (tbo->drawing));
+    if (tbo->toolbar != NULL && tbo->toolbar->tools != NULL)
+        selector = TBO_TOOL_SELECTOR (tbo->toolbar->tools[TBO_TOOLBAR_SELECTOR]);
+    if (selector != NULL)
+    {
+        selected_frame = tbo_tool_selector_get_selected_frame (selector);
+        selected_object = tbo_tool_selector_get_selected_obj (selector);
+    }
+
+    status = g_string_new (NULL);
+
+    segment = g_strdup_printf (_("Page %d of %d"),
+                               tbo_comic_page_index (tbo->comic) + 1,
+                               tbo_comic_len (tbo->comic));
+    append_status_segment (status, segment);
+    g_free (segment);
+
+    segment = g_strdup_printf (_("Frames: %d"), page != NULL ? tbo_page_len (page) : 0);
+    append_status_segment (status, segment);
+    g_free (segment);
+
+    if (current_frame != NULL)
+    {
+        frame_index = frame_index_for_status (page, current_frame);
+        if (frame_index > 0)
+            segment = g_strdup_printf (_("Editing frame %d"), frame_index);
+        else
+            segment = g_strdup (_("Editing frame"));
+        append_status_segment (status, segment);
+        g_free (segment);
+
+        if (selected_object != NULL)
+        {
+            segment = g_strdup_printf (_("Object: %s"), object_label_for_status (selected_object));
+            append_status_segment (status, segment);
+            g_free (segment);
+        }
+
+        append_status_segment (status, _("Esc: back to page"));
     }
     else
     {
-        snprintf (buffer, 200, _("page: %d of %d [ %5d,%5d ] | frames: %d | Enter: frame"),
-                  tbo_comic_page_index (tbo->comic),
-                  tbo_comic_len (tbo->comic),
-                  x, y,
-                  tbo_page_len (tbo_comic_get_current_page (tbo->comic)));
+        if (selected_frame != NULL)
+        {
+            frame_index = frame_index_for_status (page, selected_frame);
+            if (frame_index > 0)
+                segment = g_strdup_printf (_("Frame %d selected"), frame_index);
+            else
+                segment = g_strdup (_("Frame selected"));
+            append_status_segment (status, segment);
+            g_free (segment);
+        }
+
+        append_status_segment (status, _("Enter: frame"));
     }
-    gtk_label_set_text (GTK_LABEL (tbo->status), buffer);
+
+    gtk_label_set_text (GTK_LABEL (tbo->status), status->str);
+    g_string_free (status, TRUE);
 }
 
 static void
@@ -281,7 +451,7 @@ on_key_cb (GtkEventControllerKey *controller,
     if (tool)
         tool->on_key (tool, GTK_WIDGET (tbo->window), event);
 
-    tbo_window_update_status (tbo, 0, 0);
+    tbo_window_refresh_status (tbo);
 
     if (KEY_BINDER && (state & (GDK_CONTROL_MASK | GDK_ALT_MASK | GDK_META_MASK)) == 0)
     {
@@ -328,6 +498,8 @@ global_key_cb (GtkEventControllerKey *controller,
                GdkModifierType        state,
                TboWindow             *tbo)
 {
+    GtkWidget *focus;
+
     if (keyval == GDK_KEY_Escape &&
         tbo->drawing != NULL &&
         tbo_drawing_get_current_frame (TBO_DRAWING (tbo->drawing)) != NULL)
@@ -336,16 +508,28 @@ global_key_cb (GtkEventControllerKey *controller,
         return TRUE;
     }
 
-    return FALSE;
-}
+    focus = gtk_window_get_focus (GTK_WINDOW (tbo->window));
+    if ((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) &&
+        tbo->drawing != NULL &&
+        tbo_drawing_get_current_frame (TBO_DRAWING (tbo->drawing)) == NULL)
+    {
+        TboToolSelector *selector = TBO_TOOL_SELECTOR (tbo->toolbar->tools[TBO_TOOLBAR_SELECTOR]);
+        Frame *selected_frame = tbo_tool_selector_get_selected_frame (selector);
 
-static void
-on_move_cb (GtkEventControllerMotion *controller,
-            gdouble                   x,
-            gdouble                   y,
-            TboWindow                *tbo)
-{
-    update_statusbar (tbo, (int)x, (int)y);
+        if (selected_frame != NULL &&
+            (focus == NULL ||
+             focus == tbo->drawing ||
+             focus == tbo->dw_scroll ||
+             focus == tbo->notebook ||
+             gtk_widget_is_ancestor (focus, tbo->dw_scroll) ||
+             gtk_widget_is_ancestor (focus, tbo->notebook)))
+        {
+            tbo_window_enter_frame (tbo, selected_frame);
+            return TRUE;
+        }
+    }
+
+    return FALSE;
 }
 
 TboWindow *
@@ -380,9 +564,13 @@ tbo_window_new (GtkWidget *window, GtkWidget *dw_scroll,
 void 
 tbo_window_free (TboWindow *tbo)
 {
-    tbo_comic_free (tbo->comic);
+    detach_document_state (tbo);
     if (tbo->toolbar)
+    {
         g_object_unref (tbo->toolbar);
+        tbo->toolbar = NULL;
+    }
+    tbo_comic_free (tbo->comic);
     g_free (tbo->path);
     g_free (tbo->browse_path);
     g_free (tbo->export_path);
@@ -492,6 +680,7 @@ tbo_window_close_request_cb (GtkWindow *window, TboWindow *tbo)
 {
     if (confirm_close (tbo))
     {
+        tbo_window_reset_document_state (tbo);
         tbo->destroying = TRUE;
         return FALSE;
     }
@@ -503,8 +692,6 @@ tbo_window_close_request_cb (GtkWindow *window, TboWindow *tbo)
 GtkWidget *
 create_darea (TboWindow *tbo)
 {
-    GtkEventController *key;
-    GtkEventController *motion;
     GtkWidget *scrolled;
     GtkWidget *darea;
 
@@ -512,15 +699,7 @@ create_darea (TboWindow *tbo)
     gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     darea = tbo_drawing_new_with_params (tbo->comic);
     tbo_scrolled_window_set_child (scrolled, darea);
-    tbo_drawing_init_dnd (TBO_DRAWING (darea), tbo);
-
-    motion = gtk_event_controller_motion_new ();
-    g_signal_connect (motion, "motion", G_CALLBACK (on_move_cb), tbo);
-    gtk_widget_add_controller (darea, motion);
-
-    key = gtk_event_controller_key_new ();
-    g_signal_connect (key, "key-pressed", G_CALLBACK (on_key_cb), tbo);
-    gtk_widget_add_controller (darea, key);
+    setup_darea_controllers (darea, tbo);
     tbo_widget_show_all (scrolled);
 
     return scrolled;
@@ -566,7 +745,7 @@ tbo_new_tbo (GtkApplication *app, int width, int height)
     tbo_widget_add_child (window, container);
 
     comic = tbo_comic_new (_("Untitled"), width, height);
-    gtk_window_set_title (GTK_WINDOW (window), comic->title);
+    gtk_window_set_title (GTK_WINDOW (window), tbo_comic_get_title (comic));
     scrolled = gtk_scrolled_window_new ();
     gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     darea = tbo_drawing_new_with_params (comic);
@@ -604,8 +783,7 @@ tbo_new_tbo (GtkApplication *app, int width, int height)
     toolbar = TBO_TOOLBAR (tbo_toolbar_new_with_params (tbo));
     tbo->toolbar = toolbar;
 
-    // drag & drop
-    tbo_drawing_init_dnd (TBO_DRAWING (darea), tbo);
+    setup_darea_controllers (darea, tbo);
 
     // key press event
     g_signal_connect (tbo->notebook, "switch-page", G_CALLBACK (notebook_switch_page_cb), tbo);
@@ -628,17 +806,17 @@ tbo_new_tbo (GtkApplication *app, int width, int height)
     apply_window_icon (window);
     tbo_toolbar_set_selected_tool (toolbar, TBO_TOOLBAR_SELECTOR);
 
-    tbo_window_update_status (tbo, 0, 0);
+    tbo_window_refresh_status (tbo);
     return tbo;
 }
 
 void
-tbo_window_update_status (TboWindow *tbo, int x, int y)
+tbo_window_refresh_status (TboWindow *tbo)
 {
     if (tbo == NULL || tbo->destroying)
         return;
 
-    update_statusbar (tbo, x, y);
+    update_statusbar (tbo);
     tbo_toolbar_update (tbo->toolbar);
 }
 
@@ -662,6 +840,9 @@ void
 tbo_window_set_current_tab_page (TboWindow *tbo, gboolean setit)
 {
     int nth;
+
+    if (tbo == NULL || tbo->destroying)
+        return;
 
     nth = tbo_comic_page_index (tbo->comic);
     if (setit)
@@ -695,8 +876,30 @@ tbo_window_enter_frame (TboWindow *tbo, Frame *frame)
     gtk_widget_grab_focus (tbo->drawing);
     tbo_tooltip_set (NULL, 0, 0, tbo);
     tbo_tooltip_set_center_timeout (_("press Esc to go back"), 3000, tbo);
-    tbo_window_update_status (tbo, 0, 0);
+    tbo_window_refresh_status (tbo);
     tbo_drawing_adjust_scroll (drawing);
+}
+
+void
+tbo_window_reset_document_state (TboWindow *tbo)
+{
+    if (tbo == NULL)
+        return;
+
+    if (tbo->toolbar != NULL)
+        tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_NONE);
+
+    detach_document_state (tbo);
+
+    if (tbo->drawing != NULL)
+    {
+        TBO_DRAWING (tbo->drawing)->tool = NULL;
+        tbo_drawing_set_comic (TBO_DRAWING (tbo->drawing), NULL);
+        tbo_drawing_set_current_frame (TBO_DRAWING (tbo->drawing), NULL);
+    }
+
+    tbo_window_set_key_binder (tbo, TRUE);
+    tbo_tooltip_set (NULL, 0, 0, tbo);
 }
 
 void
@@ -718,26 +921,38 @@ tbo_window_leave_frame (TboWindow *tbo)
     tbo_tool_selector_set_selected_obj (selector, NULL);
     gtk_widget_grab_focus (tbo->drawing);
     tbo_tooltip_set (NULL, 0, 0, tbo);
-    tbo_window_update_status (tbo, 0, 0);
+    tbo_window_refresh_status (tbo);
     tbo_drawing_adjust_scroll (drawing);
 }
 
 gboolean
 tbo_window_undo_cb (GtkWidget *widget, TboWindow *tbo) {
+    gint old_page_count = tbo_window_get_page_count (tbo);
+
     tbo_undo_stack_undo (tbo->undo_stack);
 
     tbo_window_mark_dirty (tbo);
+    sync_page_widgets_with_comic (tbo);
+    if (old_page_count != tbo_window_get_page_count (tbo))
+        tbo_window_set_current_tab_page (tbo, TRUE);
     tbo_drawing_update (TBO_DRAWING (tbo->drawing));
+    tbo_window_refresh_status (tbo);
     tbo_toolbar_update (tbo->toolbar);
     return FALSE;
 }
 
 gboolean
 tbo_window_redo_cb (GtkWidget *widget, TboWindow *tbo) {
+    gint old_page_count = tbo_window_get_page_count (tbo);
+
     tbo_undo_stack_redo (tbo->undo_stack);
 
     tbo_window_mark_dirty (tbo);
+    sync_page_widgets_with_comic (tbo);
+    if (old_page_count != tbo_window_get_page_count (tbo))
+        tbo_window_set_current_tab_page (tbo, TRUE);
     tbo_drawing_update (TBO_DRAWING (tbo->drawing));
+    tbo_window_refresh_status (tbo);
     tbo_toolbar_update (tbo->toolbar);
     return FALSE;
 }

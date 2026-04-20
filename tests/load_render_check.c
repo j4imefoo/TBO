@@ -31,9 +31,13 @@ int main(int argc, char **argv)
         return 5;
 
     drawing = tbo_drawing_new_with_params (comic);
-    surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, comic->width, comic->height);
+    surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
+                                          tbo_comic_get_width (comic),
+                                          tbo_comic_get_height (comic));
     cr = cairo_create (surface);
-    tbo_drawing_draw_page (TBO_DRAWING (drawing), cr, page, comic->width, comic->height);
+    tbo_drawing_draw_page (TBO_DRAWING (drawing), cr, page,
+                           tbo_comic_get_width (comic),
+                           tbo_comic_get_height (comic));
 
     if (cairo_status (cr) != CAIRO_STATUS_SUCCESS ||
         cairo_surface_status (surface) != CAIRO_STATUS_SUCCESS)
