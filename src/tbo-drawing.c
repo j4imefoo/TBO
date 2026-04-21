@@ -36,6 +36,54 @@ G_DEFINE_TYPE (TboDrawing, tbo_drawing, GTK_TYPE_DRAWING_AREA);
 static void tbo_drawing_set_window_pointer (TboDrawing *self, TboWindow *tbo);
 static void tbo_drawing_set_comic_pointer (TboDrawing *self, Comic *comic);
 
+static gdouble
+clamp_zoom (gdouble zoom)
+{
+    if (!isfinite (zoom) || zoom < ZOOM_STEP)
+        return ZOOM_STEP;
+
+    return zoom;
+}
+
+static gboolean
+get_frame_view_transform (TboDrawing *self, Frame *frame, gdouble *scale, gint *base_x, gint *base_y)
+{
+    gint width;
+    gint height;
+    gint centered_x;
+    gint centered_y;
+    gdouble scale_x;
+    gdouble scale_y;
+    gdouble current_scale;
+
+    if (self == NULL || self->comic == NULL || frame == NULL)
+        return FALSE;
+
+    width = tbo_comic_get_width (self->comic);
+    height = tbo_comic_get_height (self->comic);
+    if (width <= 20 || height <= 20 ||
+        tbo_frame_get_width (frame) <= 0 || tbo_frame_get_height (frame) <= 0)
+        return FALSE;
+
+    scale_x = (width - 20) / (gdouble) tbo_frame_get_width (frame);
+    scale_y = (height - 20) / (gdouble) tbo_frame_get_height (frame);
+    current_scale = MIN (scale_x, scale_y);
+    if (!isfinite (current_scale) || current_scale <= 0.0)
+        return FALSE;
+
+    centered_x = (gint) ((width / 2.0) - (tbo_frame_get_width (frame) * current_scale / 2.0));
+    centered_y = (gint) ((height / 2.0) - (tbo_frame_get_height (frame) * current_scale / 2.0));
+
+    if (scale != NULL)
+        *scale = current_scale;
+    if (base_x != NULL)
+        *base_x = centered_x / current_scale;
+    if (base_y != NULL)
+        *base_y = centered_y / current_scale;
+
+    return TRUE;
+}
+
 static void
 tbo_drawing_set_current_frame_pointer (TboDrawing *self, Frame *frame)
 {
@@ -135,9 +183,10 @@ static void
 motion_notify_cb (GtkEventControllerMotion *controller, gdouble x, gdouble y, gpointer user_data)
 {
     TboDrawing *self = TBO_DRAWING (user_data);
+    gdouble zoom = clamp_zoom (self->zoom);
     TboPointerEvent event = {
-        .x = x / self->zoom,
-        .y = y / self->zoom,
+        .x = x / zoom,
+        .y = y / zoom,
         .button = 0,
         .n_press = 0,
         .state = gtk_event_controller_get_current_event_state (GTK_EVENT_CONTROLLER (controller)),
@@ -151,9 +200,10 @@ static void
 click_pressed_cb (GtkGestureClick *gesture, gint n_press, gdouble x, gdouble y, gpointer user_data)
 {
     TboDrawing *self = TBO_DRAWING (user_data);
+    gdouble zoom = clamp_zoom (self->zoom);
     TboPointerEvent event = {
-        .x = x / self->zoom,
-        .y = y / self->zoom,
+        .x = x / zoom,
+        .y = y / zoom,
         .button = gtk_gesture_single_get_current_button (GTK_GESTURE_SINGLE (gesture)),
         .n_press = n_press,
         .state = gtk_event_controller_get_current_event_state (GTK_EVENT_CONTROLLER (gesture)),
@@ -174,9 +224,10 @@ static void
 click_released_cb (GtkGestureClick *gesture, gint n_press, gdouble x, gdouble y, gpointer user_data)
 {
     TboDrawing *self = TBO_DRAWING (user_data);
+    gdouble zoom = clamp_zoom (self->zoom);
     TboPointerEvent event = {
-        .x = x / self->zoom,
-        .y = y / self->zoom,
+        .x = x / zoom,
+        .y = y / zoom,
         .button = gtk_gesture_single_get_current_button (GTK_GESTURE_SINGLE (gesture)),
         .n_press = n_press,
         .state = gtk_event_controller_get_current_event_state (GTK_EVENT_CONTROLLER (gesture)),
@@ -370,21 +421,21 @@ tbo_drawing_draw_page (TboDrawing *self, cairo_t *cr, Page *page, gint w, gint h
 void
 tbo_drawing_zoom_in (TboDrawing *self)
 {
-    self->zoom += ZOOM_STEP;
+    self->zoom = clamp_zoom (self->zoom + ZOOM_STEP);
     tbo_drawing_adjust_scroll (self);
 }
 
 void
 tbo_drawing_zoom_out (TboDrawing *self)
 {
-    self->zoom -= ZOOM_STEP;
+    self->zoom = clamp_zoom (self->zoom - ZOOM_STEP);
     tbo_drawing_adjust_scroll (self);
 }
 
 void
 tbo_drawing_zoom_100 (TboDrawing *self)
 {
-    self->zoom = 1;
+    self->zoom = clamp_zoom (1);
     tbo_drawing_adjust_scroll (self);
 }
 
@@ -398,7 +449,7 @@ tbo_drawing_zoom_fit (TboDrawing *self)
 
     z1 = fabs ((float)w / (float)tbo_comic_get_width (self->comic));
     z2 = fabs ((float)h / (float)tbo_comic_get_height (self->comic));
-    self->zoom = z1 < z2 ? z1 : z2;
+    self->zoom = clamp_zoom (z1 < z2 ? z1 : z2);
     tbo_drawing_adjust_scroll (self);
 }
 
@@ -406,6 +457,99 @@ gdouble
 tbo_drawing_get_zoom (TboDrawing *self)
 {
     return self->zoom;
+}
+
+gdouble
+tbo_drawing_get_current_frame_scale (TboDrawing *self)
+{
+    gdouble scale;
+
+    if (!get_frame_view_transform (self, self->current_frame, &scale, NULL, NULL))
+        return 1.0;
+
+    return scale;
+}
+
+gboolean
+tbo_drawing_view_to_frame (TboDrawing *self, gdouble view_x, gdouble view_y, gint *frame_x, gint *frame_y)
+{
+    gdouble scale;
+    gint base_x;
+    gint base_y;
+
+    if (!get_frame_view_transform (self, self->current_frame, &scale, &base_x, &base_y))
+        return FALSE;
+
+    if (frame_x != NULL)
+        *frame_x = (view_x / scale) - base_x;
+    if (frame_y != NULL)
+        *frame_y = (view_y / scale) - base_y;
+
+    return TRUE;
+}
+
+void
+tbo_drawing_get_object_relative (TboDrawing *self, TboObjectBase *obj, gint *x, gint *y, gint *w, gint *h)
+{
+    gdouble scale;
+    gint base_x;
+    gint base_y;
+
+    if (!get_frame_view_transform (self, self->current_frame, &scale, &base_x, &base_y))
+    {
+        if (x != NULL)
+            *x = 0;
+        if (y != NULL)
+            *y = 0;
+        if (w != NULL)
+            *w = 0;
+        if (h != NULL)
+            *h = 0;
+        return;
+    }
+
+    if (x != NULL)
+        *x = (base_x + obj->x) * scale;
+    if (y != NULL)
+        *y = (base_y + obj->y) * scale;
+    if (w != NULL)
+        *w = obj->width * scale;
+    if (h != NULL)
+        *h = obj->height * scale;
+}
+
+gboolean
+tbo_drawing_point_inside_object (TboDrawing *self, TboObjectBase *obj, gint x, gint y)
+{
+    gint ox;
+    gint oy;
+    gint ow;
+    gint oh;
+    gint xnew1;
+    gint ynew1;
+    gint xnew2;
+    gint ynew2;
+    gint xnew3;
+    gint ynew3;
+    gint xmax;
+    gint ymax;
+    gint xmin;
+    gint ymin;
+
+    tbo_drawing_get_object_relative (self, obj, &ox, &oy, &ow, &oh);
+    xnew1 = ox + (ow * cos (obj->angle));
+    ynew1 = oy + (ow * sin (obj->angle));
+    xnew2 = ox + (-oh * sin (obj->angle));
+    ynew2 = oy + (oh * cos (obj->angle));
+    xnew3 = ox + (ow * cos (obj->angle) - oh * sin (obj->angle));
+    ynew3 = oy + (oh * cos (obj->angle) + ow * sin (obj->angle));
+
+    xmax = MAX (MAX (ox, xnew1), MAX (xnew2, xnew3));
+    ymax = MAX (MAX (oy, ynew1), MAX (ynew2, ynew3));
+    xmin = MIN (MIN (ox, xnew1), MIN (xnew2, xnew3));
+    ymin = MIN (MIN (oy, ynew1), MIN (ynew2, ynew3));
+
+    return x >= xmin && x <= xmax && y >= ymin && y <= ymax;
 }
 
 void
@@ -416,6 +560,8 @@ tbo_drawing_adjust_scroll (TboDrawing *self)
 
     if (!self->comic)
         return;
+
+    self->zoom = clamp_zoom (self->zoom);
 
     width = MAX (1, ceil (tbo_comic_get_width (self->comic) * self->zoom));
     height = MAX (1, ceil (tbo_comic_get_height (self->comic) * self->zoom));

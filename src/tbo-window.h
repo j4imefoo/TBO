@@ -41,6 +41,7 @@ struct _TboWindow
     gchar *path;
     gchar *browse_path;
     gchar *export_path;
+    gboolean key_binder;
     gboolean dirty;
     gboolean destroying;
 };
@@ -69,6 +70,7 @@ void tbo_window_set_key_binder (TboWindow *tbo, gboolean keyb);
 void tbo_window_enter_frame (TboWindow *tbo, Frame *frame);
 void tbo_window_leave_frame (TboWindow *tbo);
 void tbo_window_reset_document_state (TboWindow *tbo);
+gboolean tbo_window_handle_unmodified_key (TboWindow *tbo, guint keyval, GdkModifierType state);
 gboolean tbo_window_undo_cb (GtkWidget *widget, TboWindow *tbo);
 gboolean tbo_window_redo_cb (GtkWidget *widget, TboWindow *tbo);
 

@@ -135,20 +135,36 @@ get_files (gchar *base_dir, gboolean isdir, gboolean bubble_mode)
 {
     GError *error = NULL;
     const gchar *filename;
+    GDir *dir;
     struct stat filestat;
     int st;
     GArray *array = g_array_new (FALSE, FALSE, sizeof(GString*));
 
     st = stat (base_dir, &filestat);
     if (st)
+    {
+        g_array_free (array, TRUE);
         return NULL;
+    }
 
-    GDir *dir = g_dir_open (base_dir, 0, &error);
+    dir = g_dir_open (base_dir, 0, &error);
+    if (dir == NULL)
+    {
+        if (error != NULL)
+            g_error_free (error);
+        g_array_free (array, TRUE);
+        return NULL;
+    }
 
     while ((filename = g_dir_read_name (dir)))
     {
         gchar *complete_dir = g_build_filename (base_dir, filename, NULL);
         st = stat (complete_dir, &filestat);
+        if (st)
+        {
+            g_free (complete_dir);
+            continue;
+        }
 
         if (isdir && bubble_mode && strcmp (filename, "bubble"))
         {
@@ -201,6 +217,12 @@ doodle_add_images (gchar *dir)
     grid = gtk_grid_new ();
     gtk_grid_set_row_spacing (GTK_GRID (grid), 8);
     gtk_grid_set_column_spacing (GTK_GRID (grid), 8);
+
+    if (arr == NULL)
+    {
+        tbo_widget_show_all (GTK_WIDGET (grid));
+        return grid;
+    }
 
     GString *mystr;
     for (i=0; i<arr->len; i++)

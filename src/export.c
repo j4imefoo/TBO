@@ -46,6 +46,21 @@ struct export_file_args {
     GtkEntry *entry;
 };
 
+static gchar *
+strip_matching_extension (const gchar *filename, const gchar *extension)
+{
+    const gchar *dot;
+
+    if (filename == NULL || extension == NULL)
+        return g_strdup (filename);
+
+    dot = strrchr (filename, '.');
+    if (dot != NULL && g_ascii_strcasecmp (dot + 1, extension) == 0)
+        return g_strndup (filename, dot - filename);
+
+    return g_strdup (filename);
+}
+
 static void
 show_export_error (TboWindow *tbo, const gchar *message)
 {
@@ -75,7 +90,7 @@ tbo_export_file (TboWindow *tbo,
     if (format_hint != NULL && *format_hint != '\0')
     {
         export_to = g_ascii_strdown (format_hint, -1);
-        base_filename = g_strdup (filename);
+        base_filename = strip_matching_extension (filename, export_to);
     }
     else
     {
@@ -346,8 +361,8 @@ tbo_export (TboWindow *tbo)
 
     if (response == GTK_RESPONSE_ACCEPT)
     {
-        width = (gint) (width * scale);
-        height = (gint) (height * scale);
+        width = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (spinw));
+        height = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (spinh));
 
         filename = g_strdup (gtk_editable_get_text (GTK_EDITABLE (fileinput)));
         if (filename == NULL || *filename == '\0')
@@ -368,9 +383,6 @@ tbo_export (TboWindow *tbo)
             format_hint = "pdf";
         else if (export_to_index == 3)
             format_hint = "svg";
-
-        width = (gint) (width * scale);
-        height = (gint) (height * scale);
 
         if (!tbo_export_file (tbo, filename, format_hint, width, height))
         {

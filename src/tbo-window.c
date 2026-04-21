@@ -42,8 +42,6 @@
 #include "tbo-widget.h"
 #include "comic-saveas-dialog.h"
 
-static gboolean KEY_BINDER = TRUE;
-
 static gboolean on_key_cb (GtkEventControllerKey *controller,
                            guint keyval,
                            guint keycode,
@@ -434,6 +432,57 @@ load_app_css (void)
 }
 
 static gboolean
+tbo_window_apply_unmodified_key (TboWindow *tbo, guint keyval)
+{
+    TboDrawing *drawing = TBO_DRAWING (tbo->drawing);
+
+    switch (keyval)
+    {
+        case GDK_KEY_plus:
+            tbo_drawing_zoom_in (drawing);
+            return TRUE;
+        case GDK_KEY_minus:
+            tbo_drawing_zoom_out (drawing);
+            return TRUE;
+        case GDK_KEY_1:
+            tbo_drawing_zoom_100 (drawing);
+            return TRUE;
+        case GDK_KEY_2:
+            tbo_drawing_zoom_fit (drawing);
+            return TRUE;
+        case GDK_KEY_s:
+            tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_SELECTOR);
+            return TRUE;
+        case GDK_KEY_t:
+            tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_TEXT);
+            return TRUE;
+        case GDK_KEY_d:
+            tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_DOODLE);
+            return TRUE;
+        case GDK_KEY_b:
+            tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_BUBBLE);
+            return TRUE;
+        case GDK_KEY_f:
+            tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_FRAME);
+            return TRUE;
+        default:
+            return FALSE;
+    }
+}
+
+gboolean
+tbo_window_handle_unmodified_key (TboWindow *tbo, guint keyval, GdkModifierType state)
+{
+    if (tbo == NULL || tbo->drawing == NULL)
+        return FALSE;
+
+    if (!tbo->key_binder || (state & (GDK_CONTROL_MASK | GDK_ALT_MASK | GDK_META_MASK)) != 0)
+        return FALSE;
+
+    return tbo_window_apply_unmodified_key (tbo, keyval);
+}
+
+static gboolean
 on_key_cb (GtkEventControllerKey *controller,
            guint                  keyval,
            guint                  keycode,
@@ -441,7 +490,6 @@ on_key_cb (GtkEventControllerKey *controller,
            TboWindow             *tbo)
 {
     TboToolBase *tool;
-    TboDrawing *drawing = TBO_DRAWING (tbo->drawing);
     TboKeyEvent event = { .keyval = keyval, .state = state };
 
     if (tbo->drawing == NULL || !gtk_widget_has_focus (GTK_WIDGET (tbo->drawing)))
@@ -453,41 +501,7 @@ on_key_cb (GtkEventControllerKey *controller,
 
     tbo_window_refresh_status (tbo);
 
-    if (KEY_BINDER && (state & (GDK_CONTROL_MASK | GDK_ALT_MASK | GDK_META_MASK)) == 0)
-    {
-        switch (keyval)
-        {
-            case GDK_KEY_plus:
-                tbo_drawing_zoom_in (drawing);
-                break;
-            case GDK_KEY_minus:
-                tbo_drawing_zoom_out (drawing);
-                break;
-            case GDK_KEY_1:
-                tbo_drawing_zoom_100 (drawing);
-                break;
-            case GDK_KEY_2:
-                tbo_drawing_zoom_fit (drawing);
-                break;
-            case GDK_KEY_s:
-                tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_SELECTOR);
-                break;
-            case GDK_KEY_t:
-                tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_TEXT);
-                break;
-            case GDK_KEY_d:
-                tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_DOODLE);
-                break;
-            case GDK_KEY_b:
-                tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_BUBBLE);
-                break;
-            case GDK_KEY_f:
-                tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_FRAME);
-                break;
-            default:
-                break;
-        }
-    }
+    tbo_window_handle_unmodified_key (tbo, keyval, state);
     return FALSE;
 }
 
@@ -555,6 +569,7 @@ tbo_window_new (GtkWidget *window, GtkWidget *dw_scroll,
     tbo->path = NULL;
     tbo->browse_path = NULL;
     tbo->export_path = NULL;
+    tbo->key_binder = TRUE;
     tbo->dirty = FALSE;
     tbo->destroying = FALSE;
 
@@ -829,7 +844,7 @@ tbo_empty_tool_area (TboWindow *tbo)
 void
 tbo_window_set_key_binder (TboWindow *tbo, gboolean keyb)
 {
-    KEY_BINDER = keyb;
+    tbo->key_binder = keyb;
     if (keyb)
         tbo_menu_enable_accel_keys (tbo);
     else

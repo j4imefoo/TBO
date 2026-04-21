@@ -112,18 +112,28 @@ drop_handl (GtkDropTarget *target,
     GtkAdjustment *adj;
     gdouble zoom = tbo_drawing_get_zoom (TBO_DRAWING (tbo->drawing));
     const gchar *asset_path = g_value_get_string (value);
-    gint rx;
-    gint ry;
 
     if (asset_path == NULL)
         return FALSE;
 
     adj = gtk_scrolled_window_get_hadjustment (GTK_SCROLLED_WINDOW (tbo->dw_scroll));
-    rx = tbo_frame_get_base_x ((x + gtk_adjustment_get_value (adj)) / zoom);
+    x = (x + gtk_adjustment_get_value (adj)) / zoom;
     adj = gtk_scrolled_window_get_vadjustment (GTK_SCROLLED_WINDOW (tbo->dw_scroll));
-    ry = tbo_frame_get_base_y ((y + gtk_adjustment_get_value (adj)) / zoom);
+    y = (y + gtk_adjustment_get_value (adj)) / zoom;
 
-    return tbo_dnd_insert_asset (tbo, asset_path, rx, ry) != NULL;
+    return tbo_dnd_insert_asset_at_view_coords (tbo, asset_path, x, y) != NULL;
+}
+
+TboObjectBase *
+tbo_dnd_insert_asset_at_view_coords (TboWindow *tbo, const gchar *asset_path, gdouble x, gdouble y)
+{
+    gint frame_x;
+    gint frame_y;
+
+    if (!tbo_drawing_view_to_frame (TBO_DRAWING (tbo->drawing), x, y, &frame_x, &frame_y))
+        return NULL;
+
+    return tbo_dnd_insert_asset (tbo, asset_path, frame_x, frame_y);
 }
 
 TboObjectBase *

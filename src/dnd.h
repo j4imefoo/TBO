@@ -27,6 +27,7 @@
 
 void tbo_dnd_setup_asset_source (GtkWidget *widget, const gchar *full_path, const gchar *relative_path);
 void tbo_dnd_setup_drawing_dest (TboDrawing *drawing, TboWindow *tbo);
+TboObjectBase *tbo_dnd_insert_asset_at_view_coords (TboWindow *tbo, const gchar *asset_path, gdouble x, gdouble y);
 TboObjectBase *tbo_dnd_insert_asset (TboWindow *tbo, const gchar *asset_path, gint x, gint y);
 
 #endif

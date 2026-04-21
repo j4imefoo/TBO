@@ -231,6 +231,78 @@ clone_dirty_check = executable(
   install: false
 )
 
+group_clone_check = executable(
+  'group-clone-check',
+  common_sources + files('tests/group_clone_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+group_selection_cleanup_check = executable(
+  'group-selection-cleanup-check',
+  common_sources + files('tests/group_selection_cleanup_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+zoom_bounds_check = executable(
+  'zoom-bounds-check',
+  common_sources + files('tests/zoom_bounds_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+frame_default_color_check = executable(
+  'frame-default-color-check',
+  common_sources + files('tests/frame_default_color_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+export_scale_check = executable(
+  'export-scale-check',
+  common_sources + files('tests/export_scale_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+frame_view_coordinate_mapping_check = executable(
+  'frame-view-coordinate-mapping-check',
+  common_sources + files('tests/frame_view_coordinate_mapping_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+key_binder_scope_check = executable(
+  'key-binder-scope-check',
+  common_sources + files('tests/key_binder_scope_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+export_extension_hint_check = executable(
+  'export-extension-hint-check',
+  common_sources + files('tests/export_extension_hint_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+doodle_dir_error_check = executable(
+  'doodle-dir-error-check',
+  common_sources + files('tests/doodle_dir_error_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
 enter_frame_key_check = executable(
   'enter-frame-key-check',
   common_sources + files('tests/enter_frame_key_check.c'),
@@ -430,6 +502,60 @@ test(
 test(
   'clone-dirty-check',
   clone_dirty_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'group-clone-check',
+  group_clone_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'group-selection-cleanup-check',
+  group_selection_cleanup_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'zoom-bounds-check',
+  zoom_bounds_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'frame-default-color-check',
+  frame_default_color_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'export-scale-check',
+  export_scale_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'frame-view-coordinate-mapping-check',
+  frame_view_coordinate_mapping_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'key-binder-scope-check',
+  key_binder_scope_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'export-extension-hint-check',
+  export_extension_hint_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'doodle-dir-error-check',
+  doodle_dir_error_check,
   env: ['G_DEBUG=fatal-criticals']
 )
 

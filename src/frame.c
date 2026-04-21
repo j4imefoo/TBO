@@ -53,10 +53,10 @@ typedef struct
 
 G_DEFINE_TYPE (Frame, tbo_frame, G_TYPE_OBJECT);
 
+static const Color DEFAULT_FRAME_COLOR = {1, 1, 1};
 static int BASE_X = 0;
 static int BASE_Y = 0;
-static float SCALE_FACTOR = 0;
-static Color BASE_COLOR = {1, 1, 1};
+static float SCALE_FACTOR = 1;
 
 static void
 draw_objects (gpointer data, gpointer user_data)
@@ -89,7 +89,7 @@ tbo_frame_init (Frame *self)
     self->width = 0;
     self->height = 0;
     self->border = TRUE;
-    self->color = BASE_COLOR;
+    self->color = DEFAULT_FRAME_COLOR;
     self->objects = NULL;
 }
 
@@ -245,7 +245,6 @@ tbo_frame_set_color_rgb (Frame *frame, gdouble red, gdouble green, gdouble blue)
     frame->color.r = red;
     frame->color.g = green;
     frame->color.b = blue;
-    BASE_COLOR = frame->color;
 }
 
 GList *

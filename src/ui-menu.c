@@ -33,6 +33,7 @@
 #include "frame.h"
 #include "page.h"
 #include "tbo-object-base.h"
+#include "tbo-object-group.h"
 #include "tbo-undo.h"
 #include "tbo-utils.h"
 
@@ -126,6 +127,39 @@ set_accels_enabled (TboWindow *tbo, gboolean enabled)
 }
 
 static void
+clone_group_selection (TboWindow *tbo, TboToolSelector *selector, Frame *frame, TboObjectGroup *group, gboolean *cloned)
+{
+    GList *objects;
+    TboObjectBase *last_cloned = NULL;
+
+    for (objects = group->objs; objects != NULL; objects = objects->next)
+    {
+        TboObjectBase *object = TBO_OBJECT_BASE (objects->data);
+        TboObjectBase *cloned_obj;
+
+        if (object == NULL || object->clone == NULL)
+            continue;
+
+        cloned_obj = object->clone (object);
+        if (cloned_obj == NULL)
+            continue;
+
+        cloned_obj->x += 10;
+        cloned_obj->y -= 10;
+        tbo_frame_add_obj (frame, cloned_obj);
+        tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_add_new (frame, cloned_obj));
+        last_cloned = cloned_obj;
+        *cloned = TRUE;
+    }
+
+    if (last_cloned != NULL)
+    {
+        tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_SELECTOR);
+        tbo_tool_selector_set_selected_obj (selector, last_cloned);
+    }
+}
+
+static void
 clone_selection (TboWindow *tbo)
 {
     TboToolSelector *selector = TBO_TOOL_SELECTOR (tbo->toolbar->tools[TBO_TOOLBAR_SELECTOR]);
@@ -150,14 +184,25 @@ clone_selection (TboWindow *tbo)
     }
     else if (obj && tbo_drawing_get_current_frame (drawing))
     {
-        TboObjectBase *cloned_obj = obj->clone (obj);
-        cloned_obj->x += 10;
-        cloned_obj->y -= 10;
-        tbo_frame_add_obj (frame, cloned_obj);
-        tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_add_new (frame, cloned_obj));
-        tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_SELECTOR);
-        tbo_tool_selector_set_selected_obj (selector, cloned_obj);
-        cloned = TRUE;
+        if (TBO_IS_OBJECT_GROUP (obj))
+        {
+            clone_group_selection (tbo, selector, frame, TBO_OBJECT_GROUP (obj), &cloned);
+        }
+        else if (obj->clone != NULL)
+        {
+            TboObjectBase *cloned_obj = obj->clone (obj);
+
+            if (cloned_obj != NULL)
+            {
+                cloned_obj->x += 10;
+                cloned_obj->y -= 10;
+                tbo_frame_add_obj (frame, cloned_obj);
+                tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_add_new (frame, cloned_obj));
+                tbo_toolbar_set_selected_tool (tbo->toolbar, TBO_TOOLBAR_SELECTOR);
+                tbo_tool_selector_set_selected_obj (selector, cloned_obj);
+                cloned = TRUE;
+            }
+        }
     }
 
     if (cloned)

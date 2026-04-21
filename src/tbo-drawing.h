@@ -24,6 +24,7 @@
 #include <gtk/gtk.h>
 #include <cairo.h>
 #include "tbo-types.h"
+#include "tbo-object-base.h"
 #include "tbo-tool-base.h"
 
 #define TBO_TYPE_DRAWING            (tbo_drawing_get_type ())
@@ -84,6 +85,10 @@ void tbo_drawing_zoom_out (TboDrawing *self);
 void tbo_drawing_zoom_100 (TboDrawing *self);
 void tbo_drawing_zoom_fit (TboDrawing *self);
 gdouble tbo_drawing_get_zoom (TboDrawing *self);
+gdouble tbo_drawing_get_current_frame_scale (TboDrawing *self);
+gboolean tbo_drawing_view_to_frame (TboDrawing *self, gdouble view_x, gdouble view_y, gint *frame_x, gint *frame_y);
+void tbo_drawing_get_object_relative (TboDrawing *self, TboObjectBase *obj, gint *x, gint *y, gint *w, gint *h);
+gboolean tbo_drawing_point_inside_object (TboDrawing *self, TboObjectBase *obj, gint x, gint y);
 void tbo_drawing_adjust_scroll (TboDrawing *self);
 void tbo_drawing_init_dnd (TboDrawing *self, TboWindow *tbo);
 

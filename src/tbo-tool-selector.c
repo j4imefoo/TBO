@@ -58,6 +58,7 @@ static void open_text_editor (TboToolSelector *self, TboObjectText *text);
 static void finalize (GObject *object);
 static void tbo_tool_selector_set_selected_frame_pointer (TboToolSelector *self, Frame *frame);
 static void tbo_tool_selector_set_selected_object_pointer (TboToolSelector *self, TboObjectBase *obj);
+static void clear_selected_group (TboToolSelector *self);
 
 #define MIN_FRAME_DIMENSION 1
 #define MIN_OBJECT_DIMENSION 1
@@ -210,6 +211,16 @@ tbo_tool_selector_set_selected_object_pointer (TboToolSelector *self, TboObjectB
         g_object_add_weak_pointer (G_OBJECT (self->selected_object),
                                    (gpointer *) &self->selected_object);
     }
+}
+
+static void
+clear_selected_group (TboToolSelector *self)
+{
+    if (!TBO_IS_OBJECT_GROUP (self->selected_object) || self->selected_frame == NULL)
+        return;
+
+    if (tbo_frame_has_obj (self->selected_frame, self->selected_object))
+        tbo_frame_del_obj (self->selected_frame, self->selected_object);
 }
 
 static void
@@ -412,7 +423,9 @@ over_resizer_obj (TboToolSelector *self, TboObjectBase *obj, int x, int y)
 {
     int rx, ry;
     int ox, oy, ow, oh;
-    tbo_frame_get_obj_relative (obj, &ox, &oy, &ow, &oh);
+    TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (self)->tbo->drawing);
+
+    tbo_drawing_get_object_relative (drawing, obj, &ox, &oy, &ow, &oh);
     rx = ox + (ow * cos(obj->angle) - oh * sin(obj->angle));
     ry = oy + (oh * cos(obj->angle) + ow * sin(obj->angle));
 
@@ -437,7 +450,9 @@ over_rotater_obj (TboToolSelector *self, TboObjectBase *obj, int x, int y)
 {
     int rx, ry;
     int ox, oy, ow, oh;
-    tbo_frame_get_obj_relative (obj, &ox, &oy, &ow, &oh);
+    TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (self)->tbo->drawing);
+
+    tbo_drawing_get_object_relative (drawing, obj, &ox, &oy, &ow, &oh);
     rx = ox;
     ry = oy;
 
@@ -633,6 +648,7 @@ frame_view_on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event
 {
     int x, y, offset_x, offset_y;
     TboToolSelector *self = TBO_TOOL_SELECTOR (tool);
+    TboDrawing *drawing = TBO_DRAWING (tool->tbo->drawing);
 
     x = (int)event->x;
     y = (int)event->y;
@@ -644,8 +660,10 @@ frame_view_on_move (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event
     {
         if (self->clicked)
         {
-            offset_x = (self->start_x - x) / tbo_frame_get_scale_factor ();
-            offset_y = (self->start_y - y) / tbo_frame_get_scale_factor ();
+            gdouble scale = tbo_drawing_get_current_frame_scale (drawing);
+
+            offset_x = (self->start_x - x) / scale;
+            offset_y = (self->start_y - y) / scale;
 
             // resizing object
             if (self->resizing)
@@ -737,7 +755,7 @@ frame_view_on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *even
         {
             obj = TBO_OBJECT_BASE (obj_list->data);
             tbo_object_group_set_vars (obj);
-            if (tbo_frame_point_inside_obj (obj, x, y))
+            if (tbo_drawing_point_inside_object (drawing, obj, x, y))
             {
                 // Selecting last occurrence.
                 obj2 = obj;
@@ -826,7 +844,7 @@ frame_view_drawing (TboToolBase *tool, cairo_t *cr)
         cairo_set_dash (cr, dashes, G_N_ELEMENTS (dashes), 0);
         cairo_set_source_rgb (cr, border.r, border.g, border.b);
         int ox, oy, ow, oh;
-        tbo_frame_get_obj_relative (current_obj, &ox, &oy, &ow, &oh);
+        tbo_drawing_get_object_relative (drawing, current_obj, &ox, &oy, &ow, &oh);
 
         cairo_translate (cr, ox, oy);
         cairo_rotate (cr, current_obj->angle);
@@ -1214,6 +1232,7 @@ finalize (GObject *object)
 {
     TboToolSelector *self = TBO_TOOL_SELECTOR (object);
 
+    clear_selected_group (self);
     tbo_tool_selector_set_selected_frame_pointer (self, NULL);
     tbo_tool_selector_set_selected_object_pointer (self, NULL);
 
@@ -1274,13 +1293,9 @@ tbo_tool_selector_set_selected (TboToolSelector *self, Frame *frame)
 void
 tbo_tool_selector_set_selected_obj (TboToolSelector *self, TboObjectBase *obj)
 {
-    if (!obj && TBO_IS_OBJECT_GROUP (self->selected_object))
-    {
-        TboDrawing *drawing = TBO_DRAWING (TBO_TOOL_BASE (self)->tbo->drawing);
-        Frame *frame = tbo_drawing_get_current_frame (drawing);
-        if (frame != NULL && tbo_frame_has_obj (frame, self->selected_object))
-            tbo_frame_del_obj (frame, self->selected_object);
-    }
+    if (obj != self->selected_object)
+        clear_selected_group (self);
+
     tbo_tool_selector_set_selected_object_pointer (self, obj);
     update_menubar (TBO_TOOL_BASE (self)->tbo);
 }
@@ -1297,6 +1312,7 @@ tbo_tool_selector_reset_state (TboToolSelector *self)
     if (self == NULL)
         return;
 
+    clear_selected_group (self);
     tbo_tool_selector_set_selected_frame_pointer (self, NULL);
     tbo_tool_selector_set_selected_object_pointer (self, NULL);
     self->x = 0;

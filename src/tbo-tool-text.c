@@ -405,7 +405,8 @@ on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
     TboObjectText *text;
     GdkRGBA color;
     TboToolText *self = TBO_TOOL_TEXT (tool);
-    Frame *frame = tbo_drawing_get_current_frame (TBO_DRAWING (tool->tbo->drawing));
+    TboDrawing *drawing = TBO_DRAWING (tool->tbo->drawing);
+    Frame *frame = tbo_drawing_get_current_frame (drawing);
 
     if (self->text_selected != NULL)
     {
@@ -423,7 +424,7 @@ on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
     for (obj_list = tbo_frame_get_objects (frame); obj_list; obj_list = obj_list->next)
     {
         obj = TBO_OBJECT_BASE (obj_list->data);
-        if (TBO_IS_OBJECT_TEXT (obj) && tbo_frame_point_inside_obj (obj, x, y))
+        if (TBO_IS_OBJECT_TEXT (obj) && tbo_drawing_point_inside_object (drawing, obj, x, y))
         {
             text = TBO_OBJECT_TEXT (obj);
             found = TRUE;
@@ -431,8 +432,8 @@ on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
     }
     if (!found)
     {
-        x = tbo_frame_get_base_x (x);
-        y = tbo_frame_get_base_y (y);
+        if (!tbo_drawing_view_to_frame (drawing, x, y, &x, &y))
+            return;
 
         if (x < 0 || y < 0 || x > tbo_frame_get_width (frame) || y > tbo_frame_get_height (frame))
             return;
@@ -468,7 +469,7 @@ drawing (TboToolBase *tool, cairo_t *cr)
         cairo_set_dash (cr, dashes, G_N_ELEMENTS (dashes), 0);
         cairo_set_source_rgb (cr, 0.9, 0, 0);
         int ox, oy, ow, oh;
-        tbo_frame_get_obj_relative (obj, &ox, &oy, &ow, &oh);
+        tbo_drawing_get_object_relative (TBO_DRAWING (tool->tbo->drawing), obj, &ox, &oy, &ow, &oh);
 
         cairo_translate (cr, ox, oy);
         cairo_rotate (cr, obj->angle);
