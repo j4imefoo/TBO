@@ -204,42 +204,66 @@ get_preview_page_for_dialog (ExportDialogState *state, TboExportScope scope, gin
     return NULL;
 }
 
-static GdkPixbuf *
-create_page_preview_pixbuf (TboWindow *tbo, Page *page, gint width, gint height)
+static GdkTexture *
+create_texture_from_surface (cairo_surface_t *surface, gint width, gint height)
+{
+    GBytes *bytes;
+    guchar *copy;
+    gsize stride;
+    gsize size;
+    GdkTexture *texture;
+
+    cairo_surface_flush (surface);
+    stride = cairo_image_surface_get_stride (surface);
+    size = stride * height;
+    copy = g_memdup2 (cairo_image_surface_get_data (surface), size);
+    bytes = g_bytes_new_take (copy, size);
+    texture = gdk_memory_texture_new (width,
+                                      height,
+                                      GDK_MEMORY_DEFAULT,
+                                      bytes,
+                                      stride);
+    g_bytes_unref (bytes);
+
+    return texture;
+}
+
+static GdkTexture *
+create_page_preview_texture (TboWindow *tbo, Page *page, gint width, gint height)
 {
     cairo_surface_t *surface;
     cairo_t *cr;
-    GdkPixbuf *pixbuf;
+    GdkTexture *texture;
 
     surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width, height);
     cr = cairo_create (surface);
     tbo_drawing_draw_page (TBO_DRAWING (tbo->drawing), cr, page, width, height);
-    pixbuf = gdk_pixbuf_get_from_surface (surface, 0, 0, width, height);
+    texture = create_texture_from_surface (surface, width, height);
     cairo_destroy (cr);
     cairo_surface_destroy (surface);
-    return pixbuf;
+    return texture;
 }
 
-static GdkPixbuf *
-create_frame_preview_pixbuf (Frame *frame, gint width, gint height)
+static GdkTexture *
+create_frame_preview_texture (Frame *frame, gint width, gint height)
 {
     cairo_surface_t *surface;
     cairo_t *cr;
-    GdkPixbuf *pixbuf;
+    GdkTexture *texture;
 
     surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width, height);
     cr = cairo_create (surface);
     draw_frame_export (cr, frame, width, height);
-    pixbuf = gdk_pixbuf_get_from_surface (surface, 0, 0, width, height);
+    texture = create_texture_from_surface (surface, width, height);
     cairo_destroy (cr);
     cairo_surface_destroy (surface);
-    return pixbuf;
+    return texture;
 }
 
 static void
-set_preview_pixbuf (ExportDialogState *state, GdkPixbuf *pixbuf)
+set_preview_texture (ExportDialogState *state, GdkTexture *texture)
 {
-    GtkWidget *picture = tbo_picture_new_for_pixbuf (pixbuf);
+    GtkWidget *picture = gtk_picture_new_for_paintable (GDK_PAINTABLE (texture));
 
     gtk_picture_set_can_shrink (GTK_PICTURE (picture), TRUE);
     gtk_widget_set_size_request (picture, 220, 160);
@@ -258,7 +282,7 @@ update_preview_and_range (ExportDialogState *state)
     gint height;
     gint preview_width;
     gint preview_height;
-    GdkPixbuf *pixbuf = NULL;
+    GdkTexture *texture = NULL;
     gchar *label = NULL;
     gboolean range_sensitive;
 
@@ -287,7 +311,7 @@ update_preview_and_range (ExportDialogState *state)
         Frame *frame = get_export_selection_frame (state->tbo);
 
         if (frame != NULL)
-            pixbuf = create_frame_preview_pixbuf (frame, preview_width, preview_height);
+            texture = create_frame_preview_texture (frame, preview_width, preview_height);
         label = g_strdup (_("Preview: Selection"));
     }
     else
@@ -295,7 +319,7 @@ update_preview_and_range (ExportDialogState *state)
         Page *page = get_preview_page_for_dialog (state, scope, from_page);
 
         if (page != NULL)
-            pixbuf = create_page_preview_pixbuf (state->tbo, page, preview_width, preview_height);
+            texture = create_page_preview_texture (state->tbo, page, preview_width, preview_height);
 
         if (scope == TBO_EXPORT_SCOPE_CURRENT_PAGE)
             label = g_strdup_printf (_("Preview: Current Page %d"), tbo_comic_page_position (state->tbo->comic));
@@ -306,10 +330,10 @@ update_preview_and_range (ExportDialogState *state)
     }
 
     gtk_label_set_text (GTK_LABEL (state->preview_label), label);
-    set_preview_pixbuf (state, pixbuf);
+    set_preview_texture (state, texture);
     g_free (label);
-    if (pixbuf != NULL)
-        g_object_unref (pixbuf);
+    if (texture != NULL)
+        g_object_unref (texture);
 }
 
 static void
