@@ -400,15 +400,26 @@ tbo_drawing_draw (TboDrawing *self, cairo_t *cr)
 
 /* TODO this method should be in TboPage */
 void
-tbo_drawing_draw_page (TboDrawing *self, cairo_t *cr, Page *page, gint w, gint h)
+tbo_drawing_draw_page (TboDrawing *self, cairo_t *cr, Page *page, gdouble w, gdouble h)
 {
     Frame *frame;
     GList *frame_list;
+    gdouble scale_x;
+    gdouble scale_y;
 
     // white background
     cairo_set_source_rgb(cr, 1, 1, 1);
     cairo_rectangle(cr, 0, 0, w, h);
     cairo_fill(cr);
+
+    if (self->comic == NULL || tbo_comic_get_width (self->comic) <= 0 || tbo_comic_get_height (self->comic) <= 0)
+        return;
+
+    scale_x = w / tbo_comic_get_width (self->comic);
+    scale_y = h / tbo_comic_get_height (self->comic);
+
+    cairo_save (cr);
+    cairo_scale (cr, scale_x, scale_y);
 
     for (frame_list = tbo_page_get_frames (page); frame_list; frame_list = frame_list->next)
     {
@@ -416,6 +427,8 @@ tbo_drawing_draw_page (TboDrawing *self, cairo_t *cr, Page *page, gint w, gint h
         frame = (Frame *)frame_list->data;
         tbo_frame_draw (frame, cr);
     }
+
+    cairo_restore (cr);
 }
 
 void

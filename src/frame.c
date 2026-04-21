@@ -24,6 +24,7 @@
 #include <string.h>
 #include "frame.h"
 #include "tbo-types.h"
+#include "tbo-list-utils.h"
 #include "tbo-object-base.h"
 #include "tbo-utils.h"
 
@@ -262,13 +263,13 @@ tbo_frame_object_count (Frame *frame)
 gint
 tbo_frame_object_nth (Frame *frame, TboObjectBase *obj)
 {
-    return g_list_index (frame->objects, obj);
+    return tbo_current_list_index (frame->objects, obj);
 }
 
 gboolean
 tbo_frame_has_obj (Frame *frame, TboObjectBase *obj)
 {
-    return g_list_find (frame->objects, obj) != NULL;
+    return tbo_list_utils_contains (frame->objects, obj);
 }
 
 void
@@ -425,10 +426,7 @@ tbo_frame_add_obj (Frame *frame, TboObjectBase *obj)
 void
 tbo_frame_insert_obj (Frame *frame, TboObjectBase *obj, int nth)
 {
-    if (nth < 0)
-        frame->objects = g_list_append (frame->objects, obj);
-    else
-        frame->objects = g_list_insert (frame->objects, obj, nth);
+    tbo_list_utils_insert (&frame->objects, obj, nth);
 }
 
 float
@@ -440,8 +438,8 @@ tbo_frame_get_scale_factor (void)
 void
 tbo_frame_del_obj (Frame *frame, TboObjectBase *obj)
 {
-    frame->objects = g_list_remove (frame->objects, obj);
-    g_object_unref (obj);
+    if (tbo_list_utils_remove (&frame->objects, obj))
+        g_object_unref (obj);
 }
 
 void
@@ -450,7 +448,7 @@ tbo_frame_reorder_obj (Frame *frame, TboObjectBase *obj, int nth)
     if (!tbo_frame_has_obj (frame, obj))
         return;
 
-    frame->objects = g_list_remove (frame->objects, obj);
+    tbo_list_utils_remove (&frame->objects, obj);
     tbo_frame_insert_obj (frame, obj, nth);
 }
 

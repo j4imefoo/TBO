@@ -61,6 +61,7 @@ struct _TboToolbar
     GtkWidget *button_undo;
     GtkWidget *button_redo;
     GtkWidget *button_new_page;
+    GtkWidget *button_duplicate_page;
     GtkWidget *button_delete_page;
     GtkWidget *button_prev_page;
     GtkWidget *button_next_page;

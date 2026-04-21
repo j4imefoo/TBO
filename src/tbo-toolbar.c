@@ -46,21 +46,31 @@ G_DEFINE_TYPE (TboToolbar, tbo_toolbar, G_TYPE_OBJECT);
 static void on_tool_button_toggled (GtkToggleButton *button, TboToolbar *toolbar);
 
 static GtkWidget *
+create_icon_wrapper (GtkWidget *child)
+{
+    GtkWidget *wrapper = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
+
+    gtk_widget_set_size_request (wrapper, 20, 20);
+    gtk_widget_set_halign (wrapper, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign (wrapper, GTK_ALIGN_CENTER);
+    gtk_widget_add_css_class (wrapper, "tbo-toolbar-icon");
+    tbo_widget_add_child (wrapper, child);
+    return wrapper;
+}
+
+static GtkWidget *
 create_icon_from_name (const gchar *icon_name)
 {
     GtkWidget *image = gtk_image_new_from_icon_name (icon_name);
+
     gtk_image_set_pixel_size (GTK_IMAGE (image), 20);
-    return image;
+    return create_icon_wrapper (image);
 }
 
 static GtkWidget *
 create_icon_from_file (const gchar *path)
 {
-    GtkWidget *wrapper;
     GtkWidget *image;
-
-    wrapper = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_set_size_request (wrapper, 20, 20);
 
     image = gtk_picture_new_for_filename (path);
     gtk_picture_set_can_shrink (GTK_PICTURE (image), TRUE);
@@ -68,8 +78,7 @@ create_icon_from_file (const gchar *path)
     gtk_widget_set_halign (image, GTK_ALIGN_CENTER);
     gtk_widget_set_valign (image, GTK_ALIGN_CENTER);
 
-    tbo_widget_add_child (wrapper, image);
-    return wrapper;
+    return create_icon_wrapper (image);
 }
 
 static GtkWidget *
@@ -129,13 +138,21 @@ add_new_page (GtkWidget *widget, TboWindow *tbo)
     Page *page = tbo_comic_new_page (tbo->comic);
     gint index = tbo_comic_page_nth (tbo->comic, page);
 
-    tbo_window_add_page_widget (tbo, create_darea (tbo));
+    tbo_window_add_page_widget (tbo, create_darea (tbo), page);
     tbo_comic_set_current_page (tbo->comic, page);
     tbo_undo_stack_insert (tbo->undo_stack, tbo_action_page_add_new (tbo->comic, page, index));
     tbo_window_set_current_tab_page (tbo, TRUE);
     tbo_window_mark_dirty (tbo);
     tbo_window_refresh_status (tbo);
     tbo_toolbar_update (tbo->toolbar);
+    return FALSE;
+}
+
+static gboolean
+duplicate_current_page (GtkWidget *widget, TboWindow *tbo)
+{
+    (void) widget;
+    tbo_window_duplicate_current_page (tbo);
     return FALSE;
 }
 
@@ -249,15 +266,18 @@ generate_toolbar (TboToolbar *self)
 
     toolbar = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 12);
     gtk_widget_set_name (toolbar, "tbo-toolbar");
+    gtk_widget_set_hexpand (toolbar, TRUE);
+    gtk_widget_set_halign (toolbar, GTK_ALIGN_FILL);
     gtk_widget_set_margin_start (toolbar, 12);
     gtk_widget_set_margin_end (toolbar, 12);
     gtk_widget_set_margin_top (toolbar, 8);
     gtk_widget_set_margin_bottom (toolbar, 8);
 
     section = create_section_box ();
-    self->button_new = create_button (create_project_icon ("icons/new.svg"), _("New comic"));
-    self->button_open = create_button (create_icon_from_name ("document-open-symbolic"), _("Open comic"));
-    self->button_save = create_button (create_icon_from_name ("document-save-symbolic"), _("Save comic"));
+    self->button_new = create_button (create_project_icon ("icons/new.svg"), _("New Comic (Ctrl+N)"));
+    self->button_open = create_button (create_icon_from_name ("document-open-symbolic"), _("Open Comic (Ctrl+O)"));
+    self->button_save = create_button (create_icon_from_name ("document-save-symbolic"), _("Save Comic (Ctrl+S)"));
+    gtk_widget_add_css_class (self->button_save, "suggested-action");
     g_signal_connect (self->button_new, "clicked", G_CALLBACK (tbo_comic_new_dialog), self->tbo);
     g_signal_connect (self->button_open, "clicked", G_CALLBACK (tbo_comic_open_dialog), self->tbo);
     g_signal_connect (self->button_save, "clicked", G_CALLBACK (tbo_comic_save_dialog), self->tbo);
@@ -267,8 +287,8 @@ generate_toolbar (TboToolbar *self)
     tbo_box_pack_start (toolbar, section, FALSE, FALSE, 0);
 
     section = create_section_box ();
-    self->button_undo = create_button (create_project_icon ("icons/undo.svg"), _("Undo"));
-    self->button_redo = create_button (create_project_icon ("icons/redo.svg"), _("Redo"));
+    self->button_undo = create_button (create_project_icon ("icons/undo.svg"), _("Undo (Ctrl+Z)"));
+    self->button_redo = create_button (create_project_icon ("icons/redo.svg"), _("Redo (Ctrl+Y)"));
     g_signal_connect (self->button_undo, "clicked", G_CALLBACK (tbo_window_undo_cb), self->tbo);
     g_signal_connect (self->button_redo, "clicked", G_CALLBACK (tbo_window_redo_cb), self->tbo);
     tbo_box_pack_start (section, self->button_undo, FALSE, FALSE, 0);
@@ -276,15 +296,18 @@ generate_toolbar (TboToolbar *self)
     tbo_box_pack_start (toolbar, section, FALSE, FALSE, 0);
 
     section = create_section_box ();
-    self->button_new_page = create_button (create_icon_from_name ("list-add-symbolic"), _("New page"));
-    self->button_delete_page = create_button (create_icon_from_name ("edit-delete-symbolic"), _("Delete page"));
-    self->button_prev_page = create_button (create_icon_from_name ("go-previous-symbolic"), _("Previous page"));
-    self->button_next_page = create_button (create_icon_from_name ("go-next-symbolic"), _("Next page"));
+    self->button_new_page = create_button (create_icon_from_name ("list-add-symbolic"), _("New Page"));
+    self->button_duplicate_page = create_button (create_icon_from_name ("edit-copy-symbolic"), _("Duplicate Page"));
+    self->button_delete_page = create_button (create_icon_from_name ("edit-delete-symbolic"), _("Delete Page"));
+    self->button_prev_page = create_button (create_icon_from_name ("go-previous-symbolic"), _("Previous Page"));
+    self->button_next_page = create_button (create_icon_from_name ("go-next-symbolic"), _("Next Page"));
     g_signal_connect (self->button_new_page, "clicked", G_CALLBACK (add_new_page), self->tbo);
+    g_signal_connect (self->button_duplicate_page, "clicked", G_CALLBACK (duplicate_current_page), self->tbo);
     g_signal_connect (self->button_delete_page, "clicked", G_CALLBACK (del_current_page), self->tbo);
     g_signal_connect (self->button_prev_page, "clicked", G_CALLBACK (prev_page), self->tbo);
     g_signal_connect (self->button_next_page, "clicked", G_CALLBACK (next_page), self->tbo);
     tbo_box_pack_start (section, self->button_new_page, FALSE, FALSE, 0);
+    tbo_box_pack_start (section, self->button_duplicate_page, FALSE, FALSE, 0);
     tbo_box_pack_start (section, self->button_delete_page, FALSE, FALSE, 0);
     tbo_box_pack_start (section, self->button_prev_page, FALSE, FALSE, 0);
     tbo_box_pack_start (section, self->button_next_page, FALSE, FALSE, 0);
@@ -292,15 +315,15 @@ generate_toolbar (TboToolbar *self)
 
     section = create_section_box ();
     register_tool_button (self, TBO_TOOLBAR_SELECTOR,
-                          create_toggle_button (create_project_icon ("icons/selector.svg"), _("Selector")));
+                          create_toggle_button (create_project_icon ("icons/selector.svg"), _("Selector (S)")));
     register_tool_button (self, TBO_TOOLBAR_FRAME,
-                          create_toggle_button (create_project_icon ("icons/frame.svg"), _("New frame")));
+                          create_toggle_button (create_project_icon ("icons/frame.svg"), _("New Frame (F)")));
     register_tool_button (self, TBO_TOOLBAR_DOODLE,
-                          create_toggle_button (create_project_icon ("icons/doodle.svg"), _("Doodle")));
+                          create_toggle_button (create_project_icon ("icons/doodle.svg"), _("Doodle (D)")));
     register_tool_button (self, TBO_TOOLBAR_BUBBLE,
-                          create_toggle_button (create_project_icon ("icons/bubble.svg"), _("Bubble")));
+                          create_toggle_button (create_project_icon ("icons/bubble.svg"), _("Bubble (B)")));
     register_tool_button (self, TBO_TOOLBAR_TEXT,
-                          create_toggle_button (create_project_icon ("icons/text.svg"), _("Text")));
+                          create_toggle_button (create_project_icon ("icons/text.svg"), _("Text (T)")));
     tbo_box_pack_start (section, GTK_WIDGET (self->tool_buttons[TBO_TOOLBAR_SELECTOR]), FALSE, FALSE, 0);
     tbo_box_pack_start (section, GTK_WIDGET (self->tool_buttons[TBO_TOOLBAR_FRAME]), FALSE, FALSE, 0);
     tbo_box_pack_start (section, GTK_WIDGET (self->tool_buttons[TBO_TOOLBAR_DOODLE]), FALSE, FALSE, 0);
@@ -309,16 +332,16 @@ generate_toolbar (TboToolbar *self)
     tbo_box_pack_start (toolbar, section, FALSE, FALSE, 0);
 
     section = create_section_box ();
-    self->button_pix = create_button (create_project_icon ("icons/pix.svg"), _("Image"));
+    self->button_pix = create_button (create_project_icon ("icons/pix.svg"), _("Insert Image"));
     g_signal_connect (self->button_pix, "clicked", G_CALLBACK (add_pix), self->tbo);
     tbo_box_pack_start (section, self->button_pix, FALSE, FALSE, 0);
     tbo_box_pack_start (toolbar, section, FALSE, FALSE, 0);
 
     section = create_section_box ();
-    self->button_zoom_100 = create_button (create_icon_from_name ("zoom-original-symbolic"), _("Zoom 1:1"));
-    self->button_zoom_out = create_button (create_icon_from_name ("zoom-out-symbolic"), _("Zoom out"));
-    self->button_zoom_in = create_button (create_icon_from_name ("zoom-in-symbolic"), _("Zoom in"));
-    self->button_zoom_fit = create_button (create_project_icon ("icons/zoom-fit.svg"), _("Zoom fit"));
+    self->button_zoom_100 = create_button (create_icon_from_name ("zoom-original-symbolic"), _("Zoom 1:1 (1)"));
+    self->button_zoom_out = create_button (create_icon_from_name ("zoom-out-symbolic"), _("Zoom Out (-)"));
+    self->button_zoom_in = create_button (create_icon_from_name ("zoom-in-symbolic"), _("Zoom In (+)"));
+    self->button_zoom_fit = create_button (create_project_icon ("icons/zoom-fit.svg"), _("Zoom Fit (2)"));
     g_signal_connect (self->button_zoom_100, "clicked", G_CALLBACK (zoom_100), self->tbo);
     g_signal_connect (self->button_zoom_out, "clicked", G_CALLBACK (zoom_out), self->tbo);
     g_signal_connect (self->button_zoom_in, "clicked", G_CALLBACK (zoom_in), self->tbo);
@@ -348,6 +371,7 @@ tbo_toolbar_init (TboToolbar *self)
     self->button_undo = NULL;
     self->button_redo = NULL;
     self->button_new_page = NULL;
+    self->button_duplicate_page = NULL;
     self->button_delete_page = NULL;
     self->button_prev_page = NULL;
     self->button_next_page = NULL;
@@ -499,6 +523,7 @@ tbo_toolbar_update (TboToolbar *self)
 
     gtk_widget_set_sensitive (self->button_prev_page, !tbo_comic_page_first (tbo->comic));
     gtk_widget_set_sensitive (self->button_next_page, !tbo_comic_page_last (tbo->comic));
+    gtk_widget_set_sensitive (self->button_duplicate_page, tbo_comic_len (tbo->comic) > 0);
     gtk_widget_set_sensitive (self->button_delete_page, tbo_comic_len (tbo->comic) > 1);
 
     gtk_widget_set_sensitive (GTK_WIDGET (self->tool_buttons[TBO_TOOLBAR_DOODLE]), in_frame_view);

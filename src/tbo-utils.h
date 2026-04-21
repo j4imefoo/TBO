@@ -24,7 +24,7 @@
 
 typedef struct _TboObjectBase TboObjectBase;
 
-void get_base_name (gchar *str, gchar *ret, int size);
+void get_base_name (const gchar *str, gchar *ret, int size);
 gchar *tbo_get_data_path (const gchar *relative_path);
 gchar *tbo_get_locale_path (void);
 void tbo_init_i18n (void);

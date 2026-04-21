@@ -48,6 +48,580 @@ static gboolean on_key_cb (GtkEventControllerKey *controller,
                            GdkModifierType state,
                            TboWindow *tbo);
 
+#define TBO_RECENT_PROJECT_LIMIT 5
+
+static gchar *get_state_file_path (void);
+static gchar *get_recovery_dir_path (void);
+static gchar *get_recovery_meta_path (const gchar *autosave_file);
+static GKeyFile *load_state_key_file (void);
+static void save_state_key_file (GKeyFile *kf);
+static gboolean confirm_close (TboWindow *tbo);
+static void update_window_title (TboWindow *tbo);
+static void apply_theme_preferences (void);
+static TboThemeMode load_theme_mode_preference (void);
+static void save_theme_mode_preference (TboThemeMode mode);
+static void schedule_autosave (TboWindow *tbo);
+static void delete_recovery_files_for_window (TboWindow *tbo);
+static void set_window_path (gchar **slot, const gchar *path);
+
+#define TBO_PAGE_WIDGET_KEY "tbo-page"
+
+static gchar *
+get_recovery_dir_path (void)
+{
+    gchar *dir = g_build_filename (g_get_user_config_dir (), "tbo", "recovery", NULL);
+
+    g_mkdir_with_parents (dir, 0755);
+    return dir;
+}
+
+static gchar *
+get_recovery_meta_path (const gchar *autosave_file)
+{
+    return g_strdup_printf ("%s.ini", autosave_file);
+}
+
+static GKeyFile *
+load_state_key_file (void)
+{
+    GKeyFile *kf = g_key_file_new ();
+    gchar *state_file = get_state_file_path ();
+
+    g_key_file_load_from_file (kf, state_file, G_KEY_FILE_NONE, NULL);
+    g_free (state_file);
+    return kf;
+}
+
+static void
+save_state_key_file (GKeyFile *kf)
+{
+    gchar *state_file = get_state_file_path ();
+    gchar *content;
+    gsize len;
+
+    content = g_key_file_to_data (kf, &len, NULL);
+    g_file_set_contents (state_file, content, len, NULL);
+    g_free (content);
+    g_free (state_file);
+}
+
+static const gchar *
+theme_mode_to_string (TboThemeMode mode)
+{
+    switch (mode)
+    {
+        case TBO_THEME_MODE_DARK:
+            return "dark";
+        case TBO_THEME_MODE_LIGHT:
+            return "light";
+        case TBO_THEME_MODE_SYSTEM:
+        default:
+            return "system";
+    }
+}
+
+static TboThemeMode
+theme_mode_from_string (const gchar *mode)
+{
+    if (g_strcmp0 (mode, "dark") == 0)
+        return TBO_THEME_MODE_DARK;
+    if (g_strcmp0 (mode, "light") == 0)
+        return TBO_THEME_MODE_LIGHT;
+
+    return TBO_THEME_MODE_SYSTEM;
+}
+
+static TboThemeMode
+load_theme_mode_preference (void)
+{
+    GKeyFile *kf = load_state_key_file ();
+    TboThemeMode mode = TBO_THEME_MODE_SYSTEM;
+
+    if (g_key_file_has_key (kf, "ui", "theme-mode", NULL))
+    {
+        gchar *mode_name = g_key_file_get_string (kf, "ui", "theme-mode", NULL);
+
+        mode = theme_mode_from_string (mode_name);
+        g_free (mode_name);
+    }
+    else if (g_key_file_has_key (kf, "ui", "light-theme", NULL))
+    {
+        mode = g_key_file_get_boolean (kf, "ui", "light-theme", NULL) ?
+               TBO_THEME_MODE_LIGHT :
+               TBO_THEME_MODE_DARK;
+    }
+
+    g_key_file_unref (kf);
+    return mode;
+}
+
+static void
+save_theme_mode_preference (TboThemeMode mode)
+{
+    GKeyFile *kf = load_state_key_file ();
+
+    g_key_file_set_string (kf, "ui", "theme-mode", theme_mode_to_string (mode));
+    g_key_file_remove_key (kf, "ui", "light-theme", NULL);
+    save_state_key_file (kf);
+    g_key_file_unref (kf);
+}
+
+static void
+update_window_title (TboWindow *tbo)
+{
+    const gchar *comic_title;
+    gchar *window_title;
+
+    if (tbo == NULL || tbo->window == NULL || tbo->comic == NULL)
+        return;
+
+    comic_title = tbo_comic_get_title (tbo->comic);
+    if (comic_title == NULL || *comic_title == '\0')
+        comic_title = _("Untitled");
+
+    if (tbo->dirty)
+        window_title = g_strdup_printf ("* %s", comic_title);
+    else
+        window_title = g_strdup (comic_title);
+
+    gtk_window_set_title (GTK_WINDOW (tbo->window), window_title);
+    g_free (window_title);
+}
+
+static void
+apply_theme_preferences (void)
+{
+    static gboolean defaults_initialized = FALSE;
+    static gchar *system_theme_name = NULL;
+    static gboolean system_prefer_dark = FALSE;
+    static gboolean has_theme_name = FALSE;
+    static gboolean has_prefer_dark = FALSE;
+    GtkSettings *settings = gtk_settings_get_default ();
+    TboThemeMode mode;
+
+    if (settings == NULL)
+        return;
+
+    if (!defaults_initialized)
+    {
+        has_theme_name = g_object_class_find_property (G_OBJECT_GET_CLASS (settings), "gtk-theme-name") != NULL;
+        has_prefer_dark = g_object_class_find_property (G_OBJECT_GET_CLASS (settings), "gtk-application-prefer-dark-theme") != NULL;
+
+        if (has_theme_name)
+            g_object_get (settings, "gtk-theme-name", &system_theme_name, NULL);
+        if (has_prefer_dark)
+            g_object_get (settings, "gtk-application-prefer-dark-theme", &system_prefer_dark, NULL);
+
+        defaults_initialized = TRUE;
+    }
+
+    mode = load_theme_mode_preference ();
+
+    if (mode == TBO_THEME_MODE_SYSTEM)
+    {
+        if (has_theme_name && system_theme_name != NULL)
+            g_object_set (settings, "gtk-theme-name", system_theme_name, NULL);
+        if (has_prefer_dark)
+            g_object_set (settings, "gtk-application-prefer-dark-theme", system_prefer_dark, NULL);
+        return;
+    }
+
+    if (has_theme_name)
+        g_object_set (settings, "gtk-theme-name", "Adwaita", NULL);
+    if (has_prefer_dark)
+        g_object_set (settings,
+                      "gtk-application-prefer-dark-theme",
+                      mode == TBO_THEME_MODE_DARK,
+                      NULL);
+}
+
+static void
+remove_recent_project (const gchar *path)
+{
+    GKeyFile *kf;
+    gchar **recent_paths;
+    gsize recent_count = 0;
+    GPtrArray *filtered;
+    gsize i;
+    gchar *last_project;
+
+    if (path == NULL || *path == '\0')
+        return;
+
+    kf = load_state_key_file ();
+    recent_paths = g_key_file_get_string_list (kf, "recent", "files", &recent_count, NULL);
+    filtered = g_ptr_array_new_with_free_func (g_free);
+
+    for (i = 0; i < recent_count; i++)
+    {
+        if (g_strcmp0 (recent_paths[i], path) != 0)
+            g_ptr_array_add (filtered, g_strdup (recent_paths[i]));
+    }
+
+    if (filtered->len > 0)
+    {
+        gchar **values = (gchar **) filtered->pdata;
+
+        g_key_file_set_string_list (kf, "recent", "files", (const gchar * const *) values, filtered->len);
+    }
+    else
+    {
+        g_key_file_remove_key (kf, "recent", "files", NULL);
+    }
+
+    last_project = g_key_file_get_string (kf, "paths", "last_project", NULL);
+    if (g_strcmp0 (last_project, path) == 0)
+        g_key_file_remove_key (kf, "paths", "last_project", NULL);
+
+    save_state_key_file (kf);
+    g_free (last_project);
+    g_strfreev (recent_paths);
+    g_ptr_array_free (filtered, TRUE);
+    g_key_file_unref (kf);
+}
+
+void
+tbo_window_add_recent_project (const gchar *path)
+{
+    GKeyFile *kf;
+    gchar **recent_paths;
+    gsize recent_count = 0;
+    GPtrArray *updated;
+    gsize i;
+
+    if (path == NULL || *path == '\0')
+        return;
+
+    kf = load_state_key_file ();
+    recent_paths = g_key_file_get_string_list (kf, "recent", "files", &recent_count, NULL);
+    updated = g_ptr_array_new_with_free_func (g_free);
+    g_ptr_array_add (updated, g_strdup (path));
+
+    for (i = 0; i < recent_count && updated->len < TBO_RECENT_PROJECT_LIMIT; i++)
+    {
+        if (g_strcmp0 (recent_paths[i], path) != 0 && recent_paths[i][0] != '\0')
+            g_ptr_array_add (updated, g_strdup (recent_paths[i]));
+    }
+
+    g_key_file_set_string (kf, "paths", "last_project", path);
+    g_key_file_set_string_list (kf,
+                                "recent",
+                                "files",
+                                (const gchar * const *) updated->pdata,
+                                updated->len);
+    save_state_key_file (kf);
+
+    g_strfreev (recent_paths);
+    g_ptr_array_free (updated, TRUE);
+    g_key_file_unref (kf);
+}
+
+gchar **
+tbo_window_get_recent_projects (gsize *n_projects)
+{
+    GKeyFile *kf = load_state_key_file ();
+    gchar **recent_paths;
+    gsize recent_count = 0;
+
+    recent_paths = g_key_file_get_string_list (kf, "recent", "files", &recent_count, NULL);
+    g_key_file_unref (kf);
+
+    if (n_projects != NULL)
+        *n_projects = recent_count;
+
+    return recent_paths;
+}
+
+gchar *
+tbo_window_get_last_project (void)
+{
+    GKeyFile *kf = load_state_key_file ();
+    gchar *value = g_key_file_get_string (kf, "paths", "last_project", NULL);
+
+    g_key_file_unref (kf);
+    return value;
+}
+
+void
+tbo_window_delete_recovery_file (const gchar *autosave_file)
+{
+    gchar *meta_file;
+
+    if (autosave_file == NULL || *autosave_file == '\0')
+        return;
+
+    g_remove (autosave_file);
+    meta_file = get_recovery_meta_path (autosave_file);
+    g_remove (meta_file);
+    g_free (meta_file);
+}
+
+void
+tbo_window_clear_persisted_state (void)
+{
+    gchar *state_file = get_state_file_path ();
+    gchar *recovery_dir = get_recovery_dir_path ();
+    GDir *dir = g_dir_open (recovery_dir, 0, NULL);
+    const gchar *name;
+
+    g_remove (state_file);
+    if (dir != NULL)
+    {
+        while ((name = g_dir_read_name (dir)) != NULL)
+        {
+            gchar *path = g_build_filename (recovery_dir, name, NULL);
+
+            g_remove (path);
+            g_free (path);
+        }
+        g_dir_close (dir);
+    }
+    g_rmdir (recovery_dir);
+    g_free (recovery_dir);
+    g_free (state_file);
+}
+
+gchar **
+tbo_window_list_recovery_files (gsize *n_files)
+{
+    gchar *recovery_dir = get_recovery_dir_path ();
+    GDir *dir = g_dir_open (recovery_dir, 0, NULL);
+    GPtrArray *files = g_ptr_array_new_with_free_func (g_free);
+    const gchar *name;
+
+    if (dir != NULL)
+    {
+        while ((name = g_dir_read_name (dir)) != NULL)
+        {
+            if (g_str_has_suffix (name, ".tbo"))
+                g_ptr_array_add (files, g_build_filename (recovery_dir, name, NULL));
+        }
+        g_dir_close (dir);
+    }
+
+    g_ptr_array_add (files, NULL);
+    g_free (recovery_dir);
+
+    if (n_files != NULL)
+        *n_files = files->len > 0 ? files->len - 1 : 0;
+
+    return (gchar **) g_ptr_array_free (files, FALSE);
+}
+
+static gboolean
+autosave_timeout_cb (gpointer user_data)
+{
+    TboWindow *tbo = user_data;
+
+    tbo->autosave_timeout_id = 0;
+    tbo_window_run_autosave (tbo);
+    return G_SOURCE_REMOVE;
+}
+
+static void
+schedule_autosave (TboWindow *tbo)
+{
+    if (tbo == NULL || tbo->destroying || tbo->autosave_timeout_id != 0)
+        return;
+
+    tbo->autosave_timeout_id = g_timeout_add_seconds (1, autosave_timeout_cb, tbo);
+}
+
+static void
+write_recovery_metadata (TboWindow *tbo)
+{
+    GKeyFile *kf;
+    gchar *meta_file;
+
+    if (tbo == NULL || tbo->autosave_path == NULL)
+        return;
+
+    kf = g_key_file_new ();
+    meta_file = get_recovery_meta_path (tbo->autosave_path);
+    g_key_file_set_string (kf,
+                           "recovery",
+                           "source_path",
+                           tbo->path != NULL ? tbo->path : "");
+    g_key_file_set_string (kf,
+                           "recovery",
+                           "title",
+                           tbo_comic_get_title (tbo->comic));
+
+    {
+        gchar *content;
+        gsize len;
+
+        content = g_key_file_to_data (kf, &len, NULL);
+        g_file_set_contents (meta_file, content, len, NULL);
+        g_free (content);
+    }
+
+    g_free (meta_file);
+    g_key_file_unref (kf);
+}
+
+static gchar *
+load_recovery_source_path (const gchar *autosave_file)
+{
+    GKeyFile *kf = g_key_file_new ();
+    gchar *meta_file = get_recovery_meta_path (autosave_file);
+    gchar *source_path = NULL;
+
+    if (g_key_file_load_from_file (kf, meta_file, G_KEY_FILE_NONE, NULL))
+    {
+        source_path = g_key_file_get_string (kf, "recovery", "source_path", NULL);
+        if (source_path != NULL && source_path[0] == '\0')
+            g_clear_pointer (&source_path, g_free);
+    }
+
+    g_free (meta_file);
+    g_key_file_unref (kf);
+    return source_path;
+}
+
+static void
+delete_recovery_files_for_window (TboWindow *tbo)
+{
+    if (tbo == NULL || tbo->autosave_path == NULL)
+        return;
+
+    tbo_window_delete_recovery_file (tbo->autosave_path);
+}
+
+static void
+add_grid_template (Page *page,
+                   gint comic_width,
+                   gint comic_height,
+                   gint columns,
+                   gint rows,
+                   gint margin_x,
+                   gint margin_y,
+                   gint gap_x,
+                   gint gap_y)
+{
+    gint frame_width;
+    gint frame_height;
+    gint row;
+    gint column;
+
+    frame_width = MAX (1, (comic_width - (2 * margin_x) - ((columns - 1) * gap_x)) / columns);
+    frame_height = MAX (1, (comic_height - (2 * margin_y) - ((rows - 1) * gap_y)) / rows);
+
+    for (row = 0; row < rows; row++)
+    {
+        for (column = 0; column < columns; column++)
+        {
+            gint x = margin_x + (column * (frame_width + gap_x));
+            gint y = margin_y + (row * (frame_height + gap_y));
+
+            tbo_page_new_frame (page, x, y, frame_width, frame_height);
+        }
+    }
+}
+
+void
+tbo_comic_template_get_default_size (TboComicTemplate template, gint *width, gint *height)
+{
+    gint default_width = 800;
+    gint default_height = 500;
+
+    switch (template)
+    {
+        case TBO_COMIC_TEMPLATE_STRIP:
+            default_width = 1800;
+            default_height = 600;
+            break;
+        case TBO_COMIC_TEMPLATE_A4:
+            default_width = 1240;
+            default_height = 1754;
+            break;
+        case TBO_COMIC_TEMPLATE_STORYBOARD:
+            default_width = 1600;
+            default_height = 900;
+            break;
+        case TBO_COMIC_TEMPLATE_EMPTY:
+        case TBO_COMIC_TEMPLATE_N_TEMPLATES:
+        default:
+            break;
+    }
+
+    if (width != NULL)
+        *width = default_width;
+    if (height != NULL)
+        *height = default_height;
+}
+
+void
+tbo_window_apply_comic_template (TboWindow *tbo, TboComicTemplate template)
+{
+    Comic *comic;
+    Page *page;
+    gint comic_width;
+    gint comic_height;
+
+    if (tbo == NULL || tbo->comic == NULL)
+        return;
+
+    comic = tbo->comic;
+    page = tbo_comic_get_current_page (comic);
+    if (page == NULL)
+        page = tbo_comic_new_page (comic);
+
+    while (tbo_page_len (page) > 0)
+        tbo_page_del_frame_by_index (page, 0);
+
+    comic_width = tbo_comic_get_width (comic);
+    comic_height = tbo_comic_get_height (comic);
+
+    switch (template)
+    {
+        case TBO_COMIC_TEMPLATE_STRIP:
+            tbo_comic_set_paper (comic, TBO_COMIC_PAPER_NONE);
+            add_grid_template (page,
+                               comic_width,
+                               comic_height,
+                               3,
+                               1,
+                               MAX (20, comic_width / 30),
+                               MAX (20, comic_height / 12),
+                               MAX (16, comic_width / 45),
+                               0);
+            break;
+        case TBO_COMIC_TEMPLATE_A4:
+            tbo_comic_set_paper (comic, TBO_COMIC_PAPER_A4);
+            add_grid_template (page,
+                               comic_width,
+                               comic_height,
+                               2,
+                               3,
+                               MAX (24, comic_width / 16),
+                               MAX (24, comic_height / 24),
+                               MAX (16, comic_width / 45),
+                               MAX (16, comic_height / 45));
+            break;
+        case TBO_COMIC_TEMPLATE_STORYBOARD:
+            tbo_comic_set_paper (comic, TBO_COMIC_PAPER_NONE);
+            add_grid_template (page,
+                               comic_width,
+                               comic_height,
+                               2,
+                               2,
+                               MAX (24, comic_width / 20),
+                               MAX (24, comic_height / 12),
+                               MAX (16, comic_width / 35),
+                               MAX (16, comic_height / 20));
+            break;
+        case TBO_COMIC_TEMPLATE_EMPTY:
+        case TBO_COMIC_TEMPLATE_N_TEMPLATES:
+        default:
+            tbo_comic_set_paper (comic, TBO_COMIC_PAPER_NONE);
+            break;
+    }
+
+    gtk_widget_queue_draw (tbo->drawing);
+    tbo_window_refresh_status (tbo);
+}
+
 static void
 setup_darea_controllers (GtkWidget *darea, TboWindow *tbo)
 {
@@ -79,25 +653,6 @@ detach_document_state (TboWindow *tbo)
 }
 
 static void
-apply_theme_preferences (void)
-{
-    GtkSettings *settings = gtk_settings_get_default ();
-
-    if (settings == NULL)
-        return;
-
-    if (g_object_class_find_property (G_OBJECT_GET_CLASS (settings), "gtk-theme-name") != NULL)
-    {
-        g_object_set (settings, "gtk-theme-name", "Adwaita-dark", NULL);
-    }
-
-    if (g_object_class_find_property (G_OBJECT_GET_CLASS (settings), "gtk-application-prefer-dark-theme") != NULL)
-    {
-        g_object_set (settings, "gtk-application-prefer-dark-theme", TRUE, NULL);
-    }
-}
-
-static void
 apply_window_icon (GtkWidget *window)
 {
     gtk_window_set_default_icon_name ("tbo");
@@ -108,6 +663,31 @@ static GtkWidget *
 get_page_widget (TboWindow *tbo, gint nth)
 {
     return gtk_notebook_get_nth_page (GTK_NOTEBOOK (tbo->notebook), nth);
+}
+
+static Page *
+get_page_widget_page (GtkWidget *page_widget)
+{
+    return page_widget != NULL ? g_object_get_data (G_OBJECT (page_widget), TBO_PAGE_WIDGET_KEY) : NULL;
+}
+
+static gint
+find_page_widget_index (TboWindow *tbo, Page *page)
+{
+    gint i;
+    gint count;
+
+    if (tbo == NULL || page == NULL)
+        return -1;
+
+    count = gtk_notebook_get_n_pages (GTK_NOTEBOOK (tbo->notebook));
+    for (i = 0; i < count; i++)
+    {
+        if (get_page_widget_page (get_page_widget (tbo, i)) == page)
+            return i;
+    }
+
+    return -1;
 }
 
 static GtkWidget *
@@ -140,6 +720,7 @@ sync_page_widgets_with_comic (TboWindow *tbo)
 {
     gint widget_count;
     gint comic_count;
+    gint i;
 
     if (tbo == NULL)
         return;
@@ -147,17 +728,43 @@ sync_page_widgets_with_comic (TboWindow *tbo)
     widget_count = tbo_window_get_page_count (tbo);
     comic_count = tbo_comic_len (tbo->comic);
 
-    while (widget_count < comic_count)
-    {
-        tbo_window_add_page_widget (tbo, create_darea (tbo));
-        widget_count++;
-    }
-
     while (widget_count > comic_count)
     {
         tbo_window_remove_page_widget (tbo, widget_count - 1);
         widget_count--;
     }
+
+    for (i = 0; i < comic_count; i++)
+    {
+        Page *page = g_list_nth_data (tbo_comic_get_pages (tbo->comic), i);
+        GtkWidget *widget = i < widget_count ? get_page_widget (tbo, i) : NULL;
+
+        if (widget == NULL)
+        {
+            tbo_window_insert_page_widget (tbo, create_darea (tbo), page, i);
+            widget_count++;
+            continue;
+        }
+
+        if (get_page_widget_page (widget) != page)
+        {
+            gint current_index = find_page_widget_index (tbo, page);
+
+            if (current_index >= 0)
+            {
+                tbo->syncing_page_reorder = TRUE;
+                gtk_notebook_reorder_child (GTK_NOTEBOOK (tbo->notebook), get_page_widget (tbo, current_index), i);
+                tbo->syncing_page_reorder = FALSE;
+            }
+            else
+            {
+                tbo_window_insert_page_widget (tbo, create_darea (tbo), page, i);
+                widget_count++;
+            }
+        }
+    }
+
+    refresh_page_tab_labels (tbo);
 }
 
 static gboolean
@@ -175,6 +782,36 @@ notebook_switch_page_cb (GtkNotebook *notebook,
     tbo_window_refresh_status (tbo);
     tbo_drawing_adjust_scroll (TBO_DRAWING (tbo->drawing));
     return FALSE;
+}
+
+static void
+notebook_page_reordered_cb (GtkNotebook *notebook,
+                            GtkWidget   *child,
+                            guint        page_num,
+                            TboWindow   *tbo)
+{
+    Page *page;
+    gint old_index;
+
+    (void) notebook;
+
+    if (tbo == NULL || tbo->destroying || tbo->syncing_page_reorder)
+        return;
+
+    page = get_page_widget_page (child);
+    if (page == NULL)
+        return;
+
+    old_index = tbo_comic_page_nth (tbo->comic, page);
+    if (old_index < 0 || old_index == (gint) page_num)
+        return;
+
+    tbo_comic_reorder_page (tbo->comic, page, page_num);
+    tbo_undo_stack_insert (tbo->undo_stack, tbo_action_page_reorder_new (tbo->comic, page, old_index, page_num));
+    tbo_window_mark_dirty (tbo);
+    refresh_page_tab_labels (tbo);
+    tbo_window_set_current_tab_page (tbo, FALSE);
+    tbo_window_refresh_status (tbo);
 }
 
 static void
@@ -244,6 +881,12 @@ get_dirname_or_home (const gchar *path)
     return g_strdup (g_get_home_dir ());
 }
 
+gboolean
+tbo_window_prepare_for_document_replace (TboWindow *tbo)
+{
+    return confirm_close (tbo);
+}
+
 static gboolean
 confirm_close (TboWindow *tbo)
 {
@@ -268,7 +911,13 @@ confirm_close (TboWindow *tbo)
     if (response == 2)
         return tbo_comic_save_dialog (NULL, tbo);
 
-    return response == 1;
+    if (response == 1)
+    {
+        tbo_window_mark_clean (tbo);
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 static void
@@ -342,8 +991,10 @@ update_statusbar (TboWindow *tbo)
 
     status = g_string_new (NULL);
 
+    append_status_segment (status, current_frame != NULL ? _("Mode: Frame") : _("Mode: Page"));
+
     segment = g_strdup_printf (_("Page %d of %d"),
-                               tbo_comic_page_index (tbo->comic) + 1,
+                               tbo_comic_page_position (tbo->comic),
                                tbo_comic_len (tbo->comic));
     append_status_segment (status, segment);
     g_free (segment);
@@ -402,24 +1053,94 @@ load_app_css (void)
         return;
 
     css =
+        "headerbar {"
+        "  background: shade(@theme_bg_color, 1.015);"
+        "  border-bottom: 1px solid alpha(@theme_fg_color, 0.06);"
+        "}"
         "#tbo-toolbar {"
-        "  background: shade(@theme_bg_color, 1.02);"
+        "  background: shade(@theme_bg_color, 1.03);"
         "  border-bottom: 1px solid alpha(@theme_fg_color, 0.08);"
+        "  padding: 4px 0;"
+        "}"
+        ".tbo-toolbar-section {"
+        "  margin-right: 8px;"
+        "  padding: 2px;"
+        "  border-radius: 12px;"
+        "  background: alpha(@theme_fg_color, 0.035);"
+        "  border: 1px solid alpha(@theme_fg_color, 0.05);"
         "}"
         ".tbo-toolbar-section button {"
-        "  min-width: 36px;"
-        "  min-height: 36px;"
+        "  min-width: 38px;"
+        "  min-height: 38px;"
+        "  padding: 0;"
+        "}"
+        ".tbo-toolbar-section button:focus-visible {"
+        "  box-shadow: inset 0 0 0 2px @accent_bg_color;"
+        "}"
+        ".tbo-toolbar-icon {"
+        "  margin: 0 1px;"
+        "}"
+        "#tbo-pages > header {"
+        "  background: shade(@theme_bg_color, 1.01);"
+        "  border-bottom: 1px solid alpha(@theme_fg_color, 0.06);"
+        "}"
+        "#tbo-pages > header tabs tab {"
+        "  margin: 4px 2px 0 2px;"
+        "  padding: 7px 12px;"
+        "  border-top-left-radius: 10px;"
+        "  border-top-right-radius: 10px;"
         "}"
         "#tbo-sidebar {"
-        "  background: shade(@theme_base_color, 0.98);"
+        "  background: shade(@theme_base_color, 0.985);"
+        "  border-left: 1px solid alpha(@theme_fg_color, 0.08);"
         "}"
         "#tbo-status {"
-        "  padding: 8px 12px;"
+        "  padding: 9px 12px;"
         "  border-top: 1px solid alpha(@theme_fg_color, 0.08);"
-        "  background: shade(@theme_bg_color, 1.01);"
+        "  background: shade(@theme_bg_color, 1.015);"
         "}"
         "#tbo-toolarea {"
-        "  padding: 12px;"
+        "  padding: 14px;"
+        "}"
+        ".tbo-sidebar-search {"
+        "  min-height: 38px;"
+        "  margin-bottom: 6px;"
+        "}"
+        ".tbo-sidebar-group, .tbo-sidebar-subgroup {"
+        "  border-radius: 10px;"
+        "  background: alpha(@theme_fg_color, 0.03);"
+        "  border: 1px solid alpha(@theme_fg_color, 0.045);"
+        "  padding: 4px 8px;"
+        "}"
+        ".tbo-sidebar-subgroup {"
+        "  background: transparent;"
+        "  border-color: transparent;"
+        "  padding-left: 0;"
+        "  padding-right: 0;"
+        "}"
+        ".tbo-asset-grid {"
+        "  margin-top: 6px;"
+        "  margin-bottom: 6px;"
+        "}"
+        ".tbo-asset-button {"
+        "  border-radius: 12px;"
+        "  padding: 7px;"
+        "  background: alpha(@theme_fg_color, 0.01);"
+        "}"
+        ".tbo-asset-button:hover {"
+        "  background: alpha(@theme_fg_color, 0.06);"
+        "}"
+        ".tbo-asset-button:focus-visible {"
+        "  box-shadow: inset 0 0 0 2px @accent_bg_color;"
+        "  background: alpha(@accent_bg_color, 0.08);"
+        "}"
+        ".tbo-dialog-content {"
+        "  padding-top: 6px;"
+        "}"
+        ".tbo-dialog-card {"
+        "  border-radius: 12px;"
+        "  background: alpha(@theme_fg_color, 0.03);"
+        "  border: 1px solid alpha(@theme_fg_color, 0.05);"
         "}";
 
     provider = gtk_css_provider_new ();
@@ -561,6 +1282,7 @@ tbo_window_new (GtkWidget *window, GtkWidget *dw_scroll,
     tbo->drawing = tbo_scrolled_window_get_child (dw_scroll);
     tbo->status = status;
     tbo->vbox = vbox;
+    tbo->menu_button = NULL;
     tbo->comic = comic;
     tbo->toolarea = toolarea;
     tbo->notebook = notebook;
@@ -569,9 +1291,25 @@ tbo_window_new (GtkWidget *window, GtkWidget *dw_scroll,
     tbo->path = NULL;
     tbo->browse_path = NULL;
     tbo->export_path = NULL;
+    {
+        gchar *recovery_dir = get_recovery_dir_path ();
+        gchar *uuid = g_uuid_string_random ();
+
+        tbo->autosave_path = g_build_filename (recovery_dir, uuid, NULL);
+        {
+            gchar *with_suffix = g_strconcat (tbo->autosave_path, ".tbo", NULL);
+            g_free (tbo->autosave_path);
+            tbo->autosave_path = with_suffix;
+        }
+        g_free (uuid);
+        g_free (recovery_dir);
+    }
+    tbo->autosave_timeout_id = 0;
+    tbo->syncing_page_reorder = FALSE;
     tbo->key_binder = TRUE;
     tbo->dirty = FALSE;
     tbo->destroying = FALSE;
+    update_window_title (tbo);
 
     return tbo;
 }
@@ -579,6 +1317,8 @@ tbo_window_new (GtkWidget *window, GtkWidget *dw_scroll,
 void 
 tbo_window_free (TboWindow *tbo)
 {
+    if (tbo->autosave_timeout_id != 0)
+        g_source_remove (tbo->autosave_timeout_id);
     detach_document_state (tbo);
     if (tbo->toolbar)
     {
@@ -589,6 +1329,7 @@ tbo_window_free (TboWindow *tbo)
     g_free (tbo->path);
     g_free (tbo->browse_path);
     g_free (tbo->export_path);
+    g_free (tbo->autosave_path);
     tbo_undo_stack_del (tbo->undo_stack);
     free (tbo);
 }
@@ -644,12 +1385,21 @@ void
 tbo_window_mark_dirty (TboWindow *tbo)
 {
     tbo->dirty = TRUE;
+    update_window_title (tbo);
+    schedule_autosave (tbo);
 }
 
 void
 tbo_window_mark_clean (TboWindow *tbo)
 {
     tbo->dirty = FALSE;
+    update_window_title (tbo);
+    if (tbo->autosave_timeout_id != 0)
+    {
+        g_source_remove (tbo->autosave_timeout_id);
+        tbo->autosave_timeout_id = 0;
+    }
+    delete_recovery_files_for_window (tbo);
 }
 
 gboolean
@@ -658,11 +1408,151 @@ tbo_window_has_unsaved_changes (TboWindow *tbo)
     return tbo->dirty;
 }
 
-void
-tbo_window_add_page_widget (TboWindow *tbo, GtkWidget *page)
+gboolean
+tbo_window_run_autosave (TboWindow *tbo)
 {
-    gint count = gtk_notebook_get_n_pages (GTK_NOTEBOOK (tbo->notebook));
-    gtk_notebook_append_page (GTK_NOTEBOOK (tbo->notebook), page, create_page_tab_label (count));
+    if (tbo == NULL || tbo->comic == NULL || !tbo->dirty || tbo->autosave_path == NULL)
+        return FALSE;
+
+    if (!tbo_comic_save_snapshot (tbo, tbo->autosave_path))
+        return FALSE;
+
+    write_recovery_metadata (tbo);
+    return TRUE;
+}
+
+gboolean
+tbo_window_recover_file (TboWindow *tbo, const gchar *autosave_file)
+{
+    gchar *source_path;
+
+    if (tbo == NULL || autosave_file == NULL || *autosave_file == '\0')
+        return FALSE;
+    if (!g_file_test (autosave_file, G_FILE_TEST_EXISTS))
+        return FALSE;
+
+    source_path = load_recovery_source_path (autosave_file);
+    tbo_comic_open (tbo, (char *) autosave_file);
+
+    set_window_path (&tbo->path, source_path);
+    if (source_path != NULL)
+        tbo_window_set_browse_path (tbo, source_path);
+    else
+        set_window_path (&tbo->browse_path, NULL);
+    tbo_window_mark_dirty (tbo);
+    tbo_window_delete_recovery_file (autosave_file);
+    g_free (source_path);
+    return TRUE;
+}
+
+gboolean
+tbo_window_open_recent_project (TboWindow *tbo, const gchar *path)
+{
+    if (tbo == NULL || path == NULL || *path == '\0')
+        return FALSE;
+    if (!g_file_test (path, G_FILE_TEST_EXISTS))
+    {
+        remove_recent_project (path);
+        tbo_alert_show (GTK_WINDOW (tbo->window), _("Couldn't open recent project"), _("The file no longer exists."));
+        return FALSE;
+    }
+    if (!tbo_window_prepare_for_document_replace (tbo))
+        return FALSE;
+
+    tbo_comic_open (tbo, (char *) path);
+    tbo_window_add_recent_project (path);
+    tbo_menu_refresh (tbo);
+    return TRUE;
+}
+
+gboolean
+tbo_window_reopen_last_project (TboWindow *tbo)
+{
+    gchar *last_project = tbo_window_get_last_project ();
+    gboolean opened = FALSE;
+
+    if (last_project != NULL)
+        opened = tbo_window_open_recent_project (tbo, last_project);
+
+    g_free (last_project);
+    return opened;
+}
+
+TboThemeMode
+tbo_window_get_theme_mode (void)
+{
+    return load_theme_mode_preference ();
+}
+
+void
+tbo_window_set_theme_mode (TboWindow *tbo, TboThemeMode mode)
+{
+    GtkApplication *app;
+    GList *windows;
+
+    save_theme_mode_preference (mode);
+    apply_theme_preferences ();
+
+    if (tbo == NULL)
+        return;
+
+    app = gtk_window_get_application (GTK_WINDOW (tbo->window));
+    if (app == NULL)
+        return;
+
+    for (windows = gtk_application_get_windows (app); windows != NULL; windows = windows->next)
+    {
+        GAction *action = g_action_map_lookup_action (G_ACTION_MAP (windows->data), "theme-mode");
+
+        if (G_IS_SIMPLE_ACTION (action))
+            g_simple_action_set_state (G_SIMPLE_ACTION (action), g_variant_new_string (theme_mode_to_string (mode)));
+    }
+}
+
+void
+tbo_window_insert_page_widget (TboWindow *tbo, GtkWidget *page, Page *comic_page, gint nth)
+{
+    gint index = nth < 0 ? gtk_notebook_get_n_pages (GTK_NOTEBOOK (tbo->notebook)) : nth;
+
+    g_object_set_data (G_OBJECT (page), TBO_PAGE_WIDGET_KEY, comic_page);
+    gtk_notebook_insert_page (GTK_NOTEBOOK (tbo->notebook), page, create_page_tab_label (index), index);
+    gtk_notebook_set_tab_reorderable (GTK_NOTEBOOK (tbo->notebook), page, TRUE);
+    refresh_page_tab_labels (tbo);
+}
+
+void
+tbo_window_add_page_widget (TboWindow *tbo, GtkWidget *page, Page *comic_page)
+{
+    tbo_window_insert_page_widget (tbo, page, comic_page, -1);
+}
+
+gboolean
+tbo_window_duplicate_current_page (TboWindow *tbo)
+{
+    Page *page;
+    Page *cloned_page;
+    gint index;
+
+    if (tbo == NULL || tbo->comic == NULL)
+        return FALSE;
+
+    page = tbo_comic_get_current_page (tbo->comic);
+    if (page == NULL)
+        return FALSE;
+
+    cloned_page = tbo_page_clone (page);
+    if (cloned_page == NULL)
+        return FALSE;
+
+    index = tbo_comic_page_nth (tbo->comic, page) + 1;
+    tbo_comic_insert_page (tbo->comic, cloned_page, index);
+    tbo_window_insert_page_widget (tbo, create_darea (tbo), cloned_page, index);
+    tbo_comic_set_current_page (tbo->comic, cloned_page);
+    tbo_undo_stack_insert (tbo->undo_stack, tbo_action_page_add_new (tbo->comic, cloned_page, index));
+    tbo_window_set_current_tab_page (tbo, TRUE);
+    tbo_window_mark_dirty (tbo);
+    tbo_window_refresh_status (tbo);
+    return TRUE;
 }
 
 void
@@ -753,23 +1643,19 @@ tbo_new_tbo (GtkApplication *app, int width, int height)
     headerbar = gtk_header_bar_new ();
     gtk_header_bar_set_show_title_buttons (GTK_HEADER_BAR (headerbar), TRUE);
     gtk_window_set_titlebar (GTK_WINDOW (window), headerbar);
-    gtk_widget_add_css_class (window, "dark");
-
     container = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_add_css_class (container, "dark");
     tbo_widget_add_child (window, container);
 
     comic = tbo_comic_new (_("Untitled"), width, height);
-    gtk_window_set_title (GTK_WINDOW (window), tbo_comic_get_title (comic));
     scrolled = gtk_scrolled_window_new ();
     gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     darea = tbo_drawing_new_with_params (comic);
     tbo_scrolled_window_set_child (scrolled, darea);
     notebook = gtk_notebook_new ();
+    gtk_widget_set_name (notebook, "tbo-pages");
     gtk_notebook_set_scrollable (GTK_NOTEBOOK (notebook), TRUE);
     gtk_widget_set_hexpand (notebook, TRUE);
     gtk_widget_set_vexpand (notebook, TRUE);
-    gtk_notebook_append_page (GTK_NOTEBOOK (notebook), scrolled, create_page_tab_label (0));
 
     hpaned = gtk_paned_new (GTK_ORIENTATION_HORIZONTAL);
     gtk_widget_set_hexpand (hpaned, TRUE);
@@ -802,6 +1688,7 @@ tbo_new_tbo (GtkApplication *app, int width, int height)
 
     // key press event
     g_signal_connect (tbo->notebook, "switch-page", G_CALLBACK (notebook_switch_page_cb), tbo);
+    g_signal_connect (tbo->notebook, "page-reordered", G_CALLBACK (notebook_page_reordered_cb), tbo);
     global_key = gtk_event_controller_key_new ();
     gtk_event_controller_set_propagation_phase (global_key, GTK_PHASE_CAPTURE);
     g_signal_connect (global_key, "key-pressed", G_CALLBACK (global_key_cb), tbo);
@@ -819,9 +1706,19 @@ tbo_new_tbo (GtkApplication *app, int width, int height)
 
     tbo_widget_show_all (window);
     apply_window_icon (window);
+    tbo_window_add_page_widget (tbo, scrolled, tbo_comic_get_current_page (comic));
     tbo_toolbar_set_selected_tool (toolbar, TBO_TOOLBAR_SELECTOR);
 
     tbo_window_refresh_status (tbo);
+    return tbo;
+}
+
+TboWindow *
+tbo_new_tbo_with_template (GtkApplication *app, int width, int height, TboComicTemplate template)
+{
+    TboWindow *tbo = tbo_new_tbo (app, width, height);
+
+    tbo_window_apply_comic_template (tbo, template);
     return tbo;
 }
 
@@ -948,7 +1845,9 @@ tbo_window_undo_cb (GtkWidget *widget, TboWindow *tbo) {
 
     tbo_window_mark_dirty (tbo);
     sync_page_widgets_with_comic (tbo);
-    if (old_page_count != tbo_window_get_page_count (tbo))
+    if (old_page_count != tbo_window_get_page_count (tbo) ||
+        gtk_notebook_get_current_page (GTK_NOTEBOOK (tbo->notebook)) != tbo_comic_page_index (tbo->comic) ||
+        get_page_widget (tbo, tbo_comic_page_index (tbo->comic)) != tbo->dw_scroll)
         tbo_window_set_current_tab_page (tbo, TRUE);
     tbo_drawing_update (TBO_DRAWING (tbo->drawing));
     tbo_window_refresh_status (tbo);
@@ -964,7 +1863,9 @@ tbo_window_redo_cb (GtkWidget *widget, TboWindow *tbo) {
 
     tbo_window_mark_dirty (tbo);
     sync_page_widgets_with_comic (tbo);
-    if (old_page_count != tbo_window_get_page_count (tbo))
+    if (old_page_count != tbo_window_get_page_count (tbo) ||
+        gtk_notebook_get_current_page (GTK_NOTEBOOK (tbo->notebook)) != tbo_comic_page_index (tbo->comic) ||
+        get_page_widget (tbo, tbo_comic_page_index (tbo->comic)) != tbo->dw_scroll)
         tbo_window_set_current_tab_page (tbo, TRUE);
     tbo_drawing_update (TBO_DRAWING (tbo->drawing));
     tbo_window_refresh_status (tbo);

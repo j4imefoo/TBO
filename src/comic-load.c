@@ -184,6 +184,8 @@ create_tbo_comic (TboLoadContext *context,
 {
     gint width = 0;
     gint height = 0;
+    const gchar *paper_value;
+    TboComicPaper paper = TBO_COMIC_PAPER_NONE;
     TboLoadAttr attrs[] = {
         {"width", ATTR_INT, &width, TRUE, FALSE},
         {"height", ATTR_INT, &height, TRUE, FALSE},
@@ -210,7 +212,24 @@ create_tbo_comic (TboLoadContext *context,
         return FALSE;
     }
 
+    paper_value = find_attr_value (attribute_names, attribute_values, "paper");
+    if (paper_value != NULL && *paper_value != '\0')
+    {
+        if (g_ascii_strcasecmp (paper_value, "a4") == 0)
+            paper = TBO_COMIC_PAPER_A4;
+        else
+        {
+            g_set_error (error,
+                         G_MARKUP_ERROR,
+                         G_MARKUP_ERROR_INVALID_CONTENT,
+                         "Unsupported paper value '%s'",
+                         paper_value);
+            return FALSE;
+        }
+    }
+
     context->comic = tbo_comic_new (context->title, width, height);
+    tbo_comic_set_paper (context->comic, paper);
     tbo_comic_del_page (context->comic, 0);
     return TRUE;
 }
@@ -559,7 +578,7 @@ static GMarkupParser parser = {
 };
 
 Comic *
-tbo_comic_load_with_alerts (char *filename, gboolean show_alerts)
+tbo_comic_load_with_alerts (const gchar *filename, gboolean show_alerts)
 {
     TboLoadContext context = { 0 };
     GMarkupParseContext *markup_context;
@@ -623,7 +642,7 @@ tbo_comic_load_with_alerts (char *filename, gboolean show_alerts)
 }
 
 Comic *
-tbo_comic_load (char *filename)
+tbo_comic_load (const gchar *filename)
 {
     return tbo_comic_load_with_alerts (filename, TRUE);
 }

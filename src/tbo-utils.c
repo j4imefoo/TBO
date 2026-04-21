@@ -28,7 +28,7 @@
 
 
 void
-get_base_name (gchar *str, gchar *ret, int size)
+get_base_name (const gchar *str, gchar *ret, int size)
 {
     gchar **paths;
     gchar **dirname;

@@ -19,16 +19,28 @@
 
 #include <string.h>
 #include <gtk/gtk.h>
+#include <glib/gi18n.h>
 #include "dnd.h"
 #include "tbo-drawing.h"
 #include "frame.h"
 #include "tbo-object-svg.h"
 #include "tbo-object-pixmap.h"
+#include "tbo-tooltip.h"
 #include "tbo-files.h"
 #include "tbo-window.h"
 #include "tbo-tool-selector.h"
 #include "tbo-undo.h"
 #include "tbo-widget.h"
+
+typedef enum
+{
+    TBO_DND_INSERT_OK,
+    TBO_DND_INSERT_NO_FRAME,
+    TBO_DND_INSERT_OUTSIDE_FRAME,
+    TBO_DND_INSERT_INVALID_ASSET,
+} TboDndInsertResult;
+
+#define TBO_DND_FEEDBACK_TIMEOUT_MS 2500
 
 static TboObjectBase *
 create_asset (const gchar *asset_path, gint x, gint y)
@@ -37,6 +49,71 @@ create_asset (const gchar *asset_path, gint x, gint y)
         return TBO_OBJECT_BASE (tbo_object_svg_new_with_params (x, y, 0, 0, (gchar *) asset_path));
 
     return TBO_OBJECT_BASE (tbo_object_pixmap_new_with_params (x, y, 0, 0, (gchar *) asset_path));
+}
+
+static void
+select_inserted_asset (TboWindow *tbo, Frame *frame, TboObjectBase *asset);
+
+static void
+show_insert_feedback (TboWindow *tbo, TboDndInsertResult result)
+{
+    const gchar *message = NULL;
+
+    switch (result)
+    {
+        case TBO_DND_INSERT_NO_FRAME:
+            message = _("Enter a frame before inserting an image.");
+            break;
+        case TBO_DND_INSERT_OUTSIDE_FRAME:
+            message = _("Drop the image inside the current frame.");
+            break;
+        case TBO_DND_INSERT_INVALID_ASSET:
+            message = _("Couldn't insert the image.");
+            break;
+        case TBO_DND_INSERT_OK:
+        default:
+            break;
+    }
+
+    if (message != NULL)
+        tbo_tooltip_set_center_timeout (message, TBO_DND_FEEDBACK_TIMEOUT_MS, tbo);
+}
+
+static TboDndInsertResult
+insert_asset_into_frame (TboWindow *tbo,
+                         const gchar *asset_path,
+                         gint x,
+                         gint y,
+                         TboObjectBase **inserted_asset)
+{
+    Frame *frame = tbo_drawing_get_current_frame (TBO_DRAWING (tbo->drawing));
+    TboObjectBase *asset;
+
+    if (inserted_asset != NULL)
+        *inserted_asset = NULL;
+
+    if (frame == NULL)
+        return TBO_DND_INSERT_NO_FRAME;
+    if (asset_path == NULL || *asset_path == '\0')
+        return TBO_DND_INSERT_INVALID_ASSET;
+    if (x < 0 || y < 0 || x > tbo_frame_get_width (frame) || y > tbo_frame_get_height (frame))
+        return TBO_DND_INSERT_OUTSIDE_FRAME;
+
+    asset = create_asset (asset_path, x, y);
+    if (asset == NULL)
+        return TBO_DND_INSERT_INVALID_ASSET;
+
+    tbo_frame_add_obj (frame, asset);
+    tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_add_new (frame, asset));
+    select_inserted_asset (tbo, frame, asset);
+    tbo_window_mark_dirty (tbo);
+    tbo_drawing_update (TBO_DRAWING (tbo->drawing));
+    tbo_toolbar_update (tbo->toolbar);
+
+    if (inserted_asset != NULL)
+        *inserted_asset = asset;
+
+    return TBO_DND_INSERT_OK;
 }
 
 static void
@@ -129,33 +206,56 @@ tbo_dnd_insert_asset_at_view_coords (TboWindow *tbo, const gchar *asset_path, gd
 {
     gint frame_x;
     gint frame_y;
+    TboObjectBase *asset = NULL;
+    TboDndInsertResult result;
 
     if (!tbo_drawing_view_to_frame (TBO_DRAWING (tbo->drawing), x, y, &frame_x, &frame_y))
+    {
+        show_insert_feedback (tbo, TBO_DND_INSERT_NO_FRAME);
         return NULL;
+    }
 
-    return tbo_dnd_insert_asset (tbo, asset_path, frame_x, frame_y);
+    result = insert_asset_into_frame (tbo, asset_path, frame_x, frame_y, &asset);
+    if (result != TBO_DND_INSERT_OK)
+    {
+        show_insert_feedback (tbo, result);
+        return NULL;
+    }
+
+    return asset;
 }
 
 TboObjectBase *
 tbo_dnd_insert_asset (TboWindow *tbo, const gchar *asset_path, gint x, gint y)
 {
-    Frame *frame = tbo_drawing_get_current_frame (TBO_DRAWING (tbo->drawing));
     TboObjectBase *asset;
+    TboDndInsertResult result;
 
-    if (frame == NULL || asset_path == NULL || *asset_path == '\0')
+    result = insert_asset_into_frame (tbo, asset_path, x, y, &asset);
+    if (result != TBO_DND_INSERT_OK)
+    {
+        show_insert_feedback (tbo, result);
         return NULL;
+    }
 
-    if (x < 0 || y < 0 || x > tbo_frame_get_width (frame) || y > tbo_frame_get_height (frame))
-        return NULL;
-
-    asset = create_asset (asset_path, x, y);
-    tbo_frame_add_obj (frame, asset);
-    tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_add_new (frame, asset));
-    select_inserted_asset (tbo, frame, asset);
-    tbo_window_mark_dirty (tbo);
-    tbo_drawing_update (TBO_DRAWING (tbo->drawing));
-    tbo_toolbar_update (tbo->toolbar);
     return asset;
+}
+
+TboObjectBase *
+tbo_dnd_insert_asset_centered (TboWindow *tbo, const gchar *asset_path)
+{
+    Frame *frame = tbo_drawing_get_current_frame (TBO_DRAWING (tbo->drawing));
+
+    if (frame == NULL)
+    {
+        show_insert_feedback (tbo, TBO_DND_INSERT_NO_FRAME);
+        return NULL;
+    }
+
+    return tbo_dnd_insert_asset (tbo,
+                                 asset_path,
+                                 tbo_frame_get_width (frame) / 2,
+                                 tbo_frame_get_height (frame) / 2);
 }
 
 void

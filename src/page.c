@@ -24,6 +24,7 @@
 #include "comic.h"
 #include "page.h"
 #include "frame.h"
+#include "tbo-list-utils.h"
 
 struct _Page
 {
@@ -39,23 +40,6 @@ struct _PageClass
 };
 
 G_DEFINE_TYPE (Page, tbo_page, G_TYPE_OBJECT);
-
-static GList *
-page_frame_link (Page *page, Frame *frame)
-{
-    return g_list_find (page->frames, frame);
-}
-
-static void
-page_set_current_frame_fallback (Page *page, GList *hint)
-{
-    if (hint != NULL)
-        page->current_frame = hint->data;
-    else if (page->frames != NULL)
-        page->current_frame = page->frames->data;
-    else
-        page->current_frame = NULL;
-}
 
 static void
 tbo_page_dispose (GObject *object)
@@ -102,6 +86,33 @@ tbo_page_free (Page *page)
         g_object_unref (page);
 }
 
+Page *
+tbo_page_clone (Page *page)
+{
+    Page *new_page;
+    GList *frames;
+    Frame *selected_clone = NULL;
+
+    if (page == NULL)
+        return NULL;
+
+    new_page = tbo_page_new (NULL);
+    for (frames = page->frames; frames != NULL; frames = frames->next)
+    {
+        Frame *frame = TBO_FRAME (frames->data);
+        Frame *cloned_frame = tbo_frame_clone (frame);
+
+        tbo_page_add_frame (new_page, cloned_frame);
+        if (page->current_frame == frame)
+            selected_clone = cloned_frame;
+    }
+
+    if (selected_clone != NULL)
+        tbo_page_set_current_frame (new_page, selected_clone);
+
+    return new_page;
+}
+
 Frame *
 tbo_page_new_frame (Page *page, int x, int y, int w, int h)
 {
@@ -122,13 +133,7 @@ tbo_page_add_frame (Page *page, Frame *frame)
 void
 tbo_page_insert_frame (Page *page, Frame *frame, int nth)
 {
-    if (nth < 0)
-        page->frames = g_list_append (page->frames, frame);
-    else
-        page->frames = g_list_insert (page->frames, frame, nth);
-
-    if (page->current_frame == NULL)
-        page->current_frame = frame;
+    tbo_current_list_insert (&page->frames, (gpointer *) &page->current_frame, frame, nth);
 }
 
 void
@@ -150,16 +155,17 @@ tbo_page_del_frame (Page *page, Frame *frame)
     if (frame == NULL)
         return;
 
-    link = page_frame_link (page, frame);
+    link = tbo_list_utils_link (page->frames, frame);
     if (link == NULL)
         return;
 
     next_link = link->next;
     prev_link = link->prev;
-    page->frames = g_list_remove (page->frames, frame);
+    if (!tbo_current_list_remove (&page->frames, (gpointer *) &page->current_frame, frame))
+        return;
 
-    if (page->current_frame == frame)
-        page_set_current_frame_fallback (page, next_link != NULL ? next_link : prev_link);
+    if (page->current_frame == NULL && (next_link != NULL || prev_link != NULL))
+        page->current_frame = (next_link != NULL ? next_link : prev_link)->data;
 
     tbo_frame_free (frame);
 }
@@ -173,22 +179,27 @@ tbo_page_len (Page *page)
 int
 tbo_page_frame_index (Page *page)
 {
-    if (page->current_frame == NULL)
-        return 0;
+    return tbo_current_list_index (page->frames, page->current_frame);
+}
 
-    return g_list_index (page->frames, page->current_frame) + 1;
+int
+tbo_page_frame_position (Page *page)
+{
+    gint index = tbo_page_frame_index (page);
+
+    return index >= 0 ? index + 1 : 0;
 }
 
 int
 tbo_page_frame_nth (Page *page, Frame *frame)
 {
-    return g_list_index (page->frames, frame);
+    return tbo_current_list_index (page->frames, frame);
 }
 
 gboolean
 tbo_page_frame_first (Page *page)
 {
-    if (tbo_page_frame_index (page) == 1)
+    if (tbo_page_frame_index (page) == 0)
         return TRUE;
     return FALSE;
 }
@@ -196,7 +207,7 @@ tbo_page_frame_first (Page *page)
 gboolean
 tbo_page_frame_last (Page *page)
 {
-    if (tbo_page_frame_index (page) == tbo_page_len (page))
+    if (tbo_page_frame_index (page) == tbo_page_len (page) - 1)
         return TRUE;
     return FALSE;
 }
@@ -204,35 +215,19 @@ tbo_page_frame_last (Page *page)
 Frame *
 tbo_page_next_frame (Page *page)
 {
-    GList *current_link;
-
     if (page->current_frame == NULL)
         return NULL;
 
-    current_link = page_frame_link (page, page->current_frame);
-    if (current_link != NULL && current_link->next != NULL)
-    {
-        page->current_frame = current_link->next->data;
-        return tbo_page_get_current_frame (page);
-    }
-    return NULL;
+    return tbo_current_list_next (page->frames, (gpointer *) &page->current_frame);
 }
 
 Frame *
 tbo_page_prev_frame (Page *page)
 {
-    GList *current_link;
-
     if (page->current_frame == NULL)
         return NULL;
 
-    current_link = page_frame_link (page, page->current_frame);
-    if (current_link != NULL && current_link->prev != NULL)
-    {
-        page->current_frame = current_link->prev->data;
-        return tbo_page_get_current_frame (page);
-    }
-    return NULL;
+    return tbo_current_list_prev (page->frames, (gpointer *) &page->current_frame);
 }
 
 Frame *
@@ -250,20 +245,13 @@ tbo_page_set_current_frame (Page *page, Frame *frame)
         return;
     }
 
-    page->current_frame = page_frame_link (page, frame) != NULL ? frame : NULL;
+    tbo_current_list_set (page->frames, (gpointer *) &page->current_frame, frame);
 }
 
 Frame *
 tbo_page_first_frame (Page *page)
 {
-    if (page->frames != NULL)
-    {
-        page->current_frame = page->frames->data;
-        return page->current_frame;
-    }
-
-    page->current_frame = NULL;
-    return NULL;
+    return tbo_current_list_first (page->frames, (gpointer *) &page->current_frame);
 }
 
 GList *

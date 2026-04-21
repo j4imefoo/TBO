@@ -139,7 +139,7 @@ tbo_file_dialog_open_project (TboWindow *window)
 gchar *
 tbo_file_dialog_save_project (TboWindow *window, const gchar *suggested_name)
 {
-    GtkFileDialog *dialog = create_dialog (_("Save as"), window, _("_Save"));
+    GtkFileDialog *dialog = create_dialog (_("Save As"), window, _("_Save"));
     GListStore *filters = create_project_filters ();
     gchar *path;
 
@@ -157,7 +157,7 @@ tbo_file_dialog_save_project (TboWindow *window, const gchar *suggested_name)
 gchar *
 tbo_file_dialog_open_image (TboWindow *window)
 {
-    GtkFileDialog *dialog = create_dialog (_("Add an Image"), window, _("_Open"));
+    GtkFileDialog *dialog = create_dialog (_("Add Image"), window, _("_Open"));
     GListStore *filters = g_list_store_new (GTK_TYPE_FILE_FILTER);
     GtkFileFilter *filter = gtk_file_filter_new ();
     gchar *path;
@@ -185,7 +185,7 @@ tbo_file_dialog_open_image (TboWindow *window)
 gchar *
 tbo_file_dialog_save_export (TboWindow *window, const gchar *current_text)
 {
-    GtkFileDialog *dialog = create_dialog (_("Export as"), window, _("_Save"));
+    GtkFileDialog *dialog = create_dialog (_("Export"), window, _("_Save"));
     gchar *path;
 
     set_initial_folder (dialog, tbo_window_get_export_dir (window));

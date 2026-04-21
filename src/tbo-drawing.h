@@ -79,7 +79,7 @@ Comic * tbo_drawing_get_comic (TboDrawing *self);
 void tbo_drawing_set_current_frame (TboDrawing *self, Frame *frame);
 Frame * tbo_drawing_get_current_frame (TboDrawing *self);
 void tbo_drawing_draw (TboDrawing *self, cairo_t *cr);
-void tbo_drawing_draw_page (TboDrawing *self, cairo_t *cr, Page *page, gint w, gint h);
+void tbo_drawing_draw_page (TboDrawing *self, cairo_t *cr, Page *page, gdouble w, gdouble h);
 void tbo_drawing_zoom_in (TboDrawing *self);
 void tbo_drawing_zoom_out (TboDrawing *self);
 void tbo_drawing_zoom_100 (TboDrawing *self);

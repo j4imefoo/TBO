@@ -70,7 +70,7 @@ main (void)
         return 15;
 
     tbo_page_set_current_frame (page2, frame3);
-    if (tbo_page_frame_index (page2) != 1)
+    if (tbo_page_frame_index (page2) != 0)
         return 16;
 
     if (tbo_comic_page_nth (comic, page4) != 1)

@@ -38,6 +38,7 @@ GType tbo_page_get_type (void);
 
 Page *tbo_page_new (Comic *comic);
 void tbo_page_free (Page *page);
+Page *tbo_page_clone (Page *page);
 Frame *tbo_page_new_frame (Page *page, int x, int y, int w, int h);
 void tbo_page_add_frame (Page *page, Frame *frame);
 void tbo_page_insert_frame (Page *page, Frame *frame, int nth);
@@ -45,6 +46,7 @@ void tbo_page_del_frame_by_index (Page *page, int nth);
 void tbo_page_del_frame (Page *page, Frame *frame);
 int tbo_page_len (Page *page);
 int tbo_page_frame_index (Page *page);
+int tbo_page_frame_position (Page *page);
 int tbo_page_frame_nth (Page *page, Frame *frame);
 gboolean tbo_page_frame_first (Page *page);
 gboolean tbo_page_frame_last (Page *page);

@@ -23,7 +23,9 @@
 
 #include "tbo-window.h"
 #include "comic.h"
+#include "ui-menu.h"
 #include "tbo-utils.h"
+#include "tbo-widget.h"
 
 static void
 present_window (TboWindow *tbo)
@@ -45,8 +47,46 @@ present_window (TboWindow *tbo)
 static void
 activate_cb (GtkApplication *app, gpointer user_data)
 {
-    TboWindow *tbo = tbo_new_tbo (app, 800, 450);
-    present_window (tbo);
+    gsize n_recovery_files = 0;
+    gchar **recovery_files = tbo_window_list_recovery_files (&n_recovery_files);
+
+    if (n_recovery_files > 0)
+    {
+        static const gchar *buttons[] = {
+            "_Discard",
+            "_Recover",
+            NULL,
+        };
+        gint response = tbo_alert_choose (NULL,
+                                          _("Recover autosaved work?"),
+                                          _("TBO found autosaved documents from a previous session."),
+                                          buttons,
+                                          0,
+                                          1);
+        gsize i;
+
+        if (response == 1)
+        {
+            for (i = 0; i < n_recovery_files; i++)
+            {
+                TboWindow *tbo = tbo_new_tbo (app, 800, 450);
+
+                tbo_window_recover_file (tbo, recovery_files[i]);
+                present_window (tbo);
+            }
+            g_strfreev (recovery_files);
+            return;
+        }
+
+        for (i = 0; i < n_recovery_files; i++)
+            tbo_window_delete_recovery_file (recovery_files[i]);
+    }
+
+    g_strfreev (recovery_files);
+    {
+        TboWindow *tbo = tbo_new_tbo (app, 800, 450);
+        present_window (tbo);
+    }
 }
 
 static void
@@ -64,6 +104,8 @@ open_cb (GtkApplication *app, GFile **files, gint n_files, const gchar *hint, gp
         {
             tbo_comic_open (tbo, path);
             tbo_window_set_path (tbo, path);
+            tbo_window_add_recent_project (path);
+            tbo_menu_refresh (tbo);
             g_free (path);
         }
         present_window (tbo);

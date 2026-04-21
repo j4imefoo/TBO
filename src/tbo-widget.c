@@ -67,6 +67,8 @@ tbo_widget_add_child (GtkWidget *parent, GtkWidget *child)
         gtk_button_set_child (GTK_BUTTON (parent), child);
     else if (GTK_IS_EXPANDER (parent))
         gtk_expander_set_child (GTK_EXPANDER (parent), child);
+    else if (GTK_IS_FRAME (parent))
+        gtk_frame_set_child (GTK_FRAME (parent), child);
 }
 
 void
@@ -80,6 +82,8 @@ tbo_widget_remove_child (GtkWidget *parent, GtkWidget *child)
         gtk_button_set_child (GTK_BUTTON (parent), NULL);
     else if (GTK_IS_EXPANDER (parent))
         gtk_expander_set_child (GTK_EXPANDER (parent), NULL);
+    else if (GTK_IS_FRAME (parent))
+        gtk_frame_set_child (GTK_FRAME (parent), NULL);
     else if (GTK_IS_WINDOW (parent))
         gtk_window_set_child (GTK_WINDOW (parent), NULL);
 }

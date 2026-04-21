@@ -303,6 +303,134 @@ doodle_dir_error_check = executable(
   install: false
 )
 
+comic_template_check = executable(
+  'comic-template-check',
+  common_sources + files('tests/comic_template_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+a4_pdf_export_check = executable(
+  'a4-pdf-export-check',
+  common_sources + files('tests/a4_pdf_export_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+autosave_recovery_check = executable(
+  'autosave-recovery-check',
+  common_sources + files('tests/autosave_recovery_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+recent_projects_check = executable(
+  'recent-projects-check',
+  common_sources + files('tests/recent_projects_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+dirty_title_check = executable(
+  'dirty-title-check',
+  common_sources + files('tests/dirty_title_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+mode_status_check = executable(
+  'mode-status-check',
+  common_sources + files('tests/mode_status_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+export_scope_check = executable(
+  'export-scope-check',
+  common_sources + files('tests/export_scope_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+dnd_feedback_check = executable(
+  'dnd-feedback-check',
+  common_sources + files('tests/dnd_feedback_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+shortcuts_guide_check = executable(
+  'shortcuts-guide-check',
+  common_sources + files('tests/shortcuts_guide_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+page_duplicate_check = executable(
+  'page-duplicate-check',
+  common_sources + files('tests/page_duplicate_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+page_reorder_check = executable(
+  'page-reorder-check',
+  common_sources + files('tests/page_reorder_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+assets_browser_search_check = executable(
+  'assets-browser-search-check',
+  common_sources + files('tests/assets_browser_search_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+export_page_range_check = executable(
+  'export-page-range-check',
+  common_sources + files('tests/export_page_range_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+export_guided_dialog_check = executable(
+  'export-guided-dialog-check',
+  common_sources + files('tests/export_guided_dialog_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+keyboard_accessibility_check = executable(
+  'keyboard-accessibility-check',
+  common_sources + files('tests/keyboard_accessibility_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+theme_respect_check = executable(
+  'theme-respect-check',
+  common_sources + files('tests/theme_respect_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
 enter_frame_key_check = executable(
   'enter-frame-key-check',
   common_sources + files('tests/enter_frame_key_check.c'),
@@ -560,6 +688,102 @@ test(
 )
 
 test(
+  'comic-template-check',
+  comic_template_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'a4-pdf-export-check',
+  a4_pdf_export_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'autosave-recovery-check',
+  autosave_recovery_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'recent-projects-check',
+  recent_projects_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'dirty-title-check',
+  dirty_title_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'mode-status-check',
+  mode_status_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'export-scope-check',
+  export_scope_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'dnd-feedback-check',
+  dnd_feedback_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'shortcuts-guide-check',
+  shortcuts_guide_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'page-duplicate-check',
+  page_duplicate_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'page-reorder-check',
+  page_reorder_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'assets-browser-search-check',
+  assets_browser_search_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'export-page-range-check',
+  export_page_range_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'export-guided-dialog-check',
+  export_guided_dialog_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'keyboard-accessibility-check',
+  keyboard_accessibility_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'theme-respect-check',
+  theme_respect_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
   'enter-frame-key-check',
   enter_frame_key_check,
   env: ['G_DEBUG=fatal-criticals']
@@ -632,6 +856,7 @@ install_subdir('data/icons', install_dir: join_paths(get_option('datadir'), 'tbo
 install_subdir('data/doodle', install_dir: join_paths(get_option('datadir'), 'tbo'))
 
 install_data('data/applications/net.danigm.tbo.desktop', install_dir: join_paths(get_option('datadir'), 'applications'))
+install_data('data/metainfo/net.danigm.tbo.metainfo.xml', install_dir: join_paths(get_option('datadir'), 'metainfo'))
 install_data('data/tbo.svg', install_dir: join_paths(get_option('datadir'), 'pixmaps'))
 install_data('data/tbo.svg', install_dir: join_paths(get_option('datadir'), 'icons', 'hicolor', 'scalable', 'apps'))
 install_data(configured_icon_png, install_dir: join_paths(get_option('datadir'), 'icons', 'hicolor', '128x128', 'apps'))

@@ -474,3 +474,195 @@ msgstr "No se pudo mezclar tbo-menu-ui.xml: %s"
 
 #~ msgid "Save current document as svg"
 #~ msgstr "Guardar el documento actual como svg"
+
+msgid "New Comic (Ctrl+N)"
+msgstr "Cómic nuevo (Ctrl+N)"
+
+msgid "Open Comic (Ctrl+O)"
+msgstr "Abrir cómic (Ctrl+O)"
+
+msgid "Save Comic (Ctrl+S)"
+msgstr "Guardar cómic (Ctrl+S)"
+
+msgid "Undo (Ctrl+Z)"
+msgstr "Deshacer (Ctrl+Z)"
+
+msgid "Redo (Ctrl+Y)"
+msgstr "Rehacer (Ctrl+Y)"
+
+msgid "Duplicate Page"
+msgstr "Duplicar página"
+
+msgid "Previous Page"
+msgstr "Página anterior"
+
+msgid "New Frame (F)"
+msgstr "Nueva viñeta (F)"
+
+msgid "Doodle (D)"
+msgstr "Monigote (D)"
+
+msgid "Bubble (B)"
+msgstr "Bocadillo (B)"
+
+msgid "Text (T)"
+msgstr "Texto (T)"
+
+msgid "Insert Image"
+msgstr "Insertar imagen"
+
+msgid "Zoom Out (-)"
+msgstr "Reducir (-)"
+
+msgid "Zoom In (+)"
+msgstr "Ampliar (+)"
+
+msgid "Zoom Fit (2)"
+msgstr "Ajustar (2)"
+
+msgid "Template: "
+msgstr "Plantilla: "
+
+msgid "Width: "
+msgstr "Anchura: "
+
+msgid "Height: "
+msgstr "Altura: "
+
+msgid "Empty"
+msgstr "Vacío"
+
+msgid "Comic Strip"
+msgstr "Tira cómica"
+
+msgid "Keyboard Shortcuts"
+msgstr "Atajos de teclado"
+
+msgid "File"
+msgstr "Archivo"
+
+msgid "Tools"
+msgstr "Herramientas"
+
+msgid "View and Navigation"
+msgstr "Vista y navegación"
+
+msgid "Arrange"
+msgstr "Organización"
+
+msgid "Clone Selection"
+msgstr "Clonar selección"
+
+msgid "Delete Selection"
+msgstr "Eliminar selección"
+
+msgid "Zoom In"
+msgstr "Ampliar"
+
+msgid "Zoom Out"
+msgstr "Reducir"
+
+msgid "Zoom Fit"
+msgstr "Ajustar"
+
+msgid "Enter Selected Frame"
+msgstr "Entrar en la viñeta seleccionada"
+
+msgid "Back to Page"
+msgstr "Volver a la página"
+
+msgid "Horizontal Flip"
+msgstr "Reflejo horizontal"
+
+msgid "Vertical Flip"
+msgstr "Reflejo vertical"
+
+msgid "Move to Front"
+msgstr "Mover al frente"
+
+msgid "Move to Back"
+msgstr "Mover atrás"
+
+msgid "TBO Comic Editor"
+msgstr "Editor de cómics TBO"
+
+msgid "Reopen Last Project"
+msgstr "Reabrir el último proyecto"
+
+msgid "Open Recent"
+msgstr "Abrir reciente"
+
+msgid "Follow System Theme"
+msgstr "Seguir el tema del sistema"
+
+msgid "Dark Theme"
+msgstr "Tema oscuro"
+
+msgid "Light Theme"
+msgstr "Tema claro"
+
+msgid "Theme"
+msgstr "Tema"
+
+msgid "All Pages"
+msgstr "Todas las páginas"
+
+msgid "Current Page"
+msgstr "Página actual"
+
+msgid "Guess by Extension"
+msgstr "Detectar por extensión"
+
+msgid "Choose File"
+msgstr "Elegir archivo"
+
+msgid "File Name: "
+msgstr "Nombre de archivo: "
+
+msgid "From Page: "
+msgstr "Desde la página: "
+
+msgid "To Page: "
+msgstr "Hasta la página: "
+
+msgid "Preview"
+msgstr "Vista previa"
+
+msgid "Preview: Selection"
+msgstr "Vista previa: selección"
+
+#, c-format
+msgid "Preview: Current Page %d"
+msgstr "Vista previa: página actual %d"
+
+#, c-format
+msgid "Preview: Page %d"
+msgstr "Vista previa: página %d"
+
+#, c-format
+msgid "Preview: Page %d of Range %d-%d"
+msgstr "Vista previa: página %d del rango %d-%d"
+
+msgid "Please select a frame to export."
+msgstr "Selecciona una viñeta para exportar."
+
+msgid "Please choose a filename to export."
+msgstr "Elige un nombre de archivo para exportar."
+
+msgid "Search Assets"
+msgstr "Buscar recursos"
+
+msgid "Search Bubbles"
+msgstr "Buscar bocadillos"
+
+msgid "No assets match this search."
+msgstr "No hay recursos que coincidan con esta búsqueda."
+
+msgid "Enter a frame before inserting an image."
+msgstr "Entra en una viñeta antes de insertar una imagen."
+
+msgid "Drop the image inside the current frame."
+msgstr "Suelta la imagen dentro de la viñeta actual."
+
+msgid "Couldn't insert the image."
+msgstr "No se pudo insertar la imagen."

@@ -39,7 +39,8 @@ main (void)
     tbo_window_refresh_status (tbo);
 
     status = gtk_label_get_text (GTK_LABEL (tbo->status));
-    if (strstr (status, "Page 1 of 1") == NULL ||
+    if (strstr (status, "Mode: Page") == NULL ||
+        strstr (status, "Page 1 of 1") == NULL ||
         strstr (status, "Frames: 1") == NULL ||
         strstr (status, "Frame 1 selected") == NULL)
         return 3;
@@ -49,7 +50,8 @@ main (void)
     tbo_window_refresh_status (tbo);
 
     status = gtk_label_get_text (GTK_LABEL (tbo->status));
-    if (strstr (status, "Page 1 of 1") == NULL ||
+    if (strstr (status, "Mode: Frame") == NULL ||
+        strstr (status, "Page 1 of 1") == NULL ||
         strstr (status, "Editing frame 1") == NULL ||
         strstr (status, "Object: Text") == NULL)
         return 4;

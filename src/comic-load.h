@@ -22,7 +22,7 @@
 
 #include "tbo-types.h"
 
-Comic *tbo_comic_load_with_alerts (char *filename, gboolean show_alerts);
-Comic *tbo_comic_load (char *filename);
+Comic *tbo_comic_load_with_alerts (const gchar *filename, gboolean show_alerts);
+Comic *tbo_comic_load (const gchar *filename);
 
 #endif

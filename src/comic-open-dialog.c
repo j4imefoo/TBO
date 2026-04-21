@@ -25,6 +25,7 @@
 #include "tbo-drawing.h"
 #include "tbo-window.h"
 #include "comic.h"
+#include "ui-menu.h"
 
 
 gboolean
@@ -35,9 +36,14 @@ tbo_comic_open_dialog (GtkWidget *widget, TboWindow *window)
     if (filename != NULL)
     {
         tbo_window_set_browse_path (window, filename);
-        tbo_comic_open (window, filename);
-        tbo_drawing_update (TBO_DRAWING (window->drawing));
-        tbo_window_refresh_status (window);
+        if (tbo_window_prepare_for_document_replace (window))
+        {
+            tbo_comic_open (window, filename);
+            tbo_window_add_recent_project (filename);
+            tbo_menu_refresh (window);
+            tbo_drawing_update (TBO_DRAWING (window->drawing));
+            tbo_window_refresh_status (window);
+        }
         g_free (filename);
     }
 

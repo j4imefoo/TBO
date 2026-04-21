@@ -46,6 +46,15 @@ typedef struct
 typedef struct
 {
     TboAction base;
+    Comic *comic;
+    Page *page;
+    gint index1;
+    gint index2;
+} TboActionPageOrder;
+
+typedef struct
+{
+    TboAction base;
     Frame *frame;
     TboObjectBase *obj;
     gint index;
@@ -82,6 +91,30 @@ typedef struct
 typedef struct
 {
     TboAction base;
+    Frame *frame;
+    gint x1;
+    gint y1;
+    gint x2;
+    gint y2;
+} TboActionFrameMove;
+
+typedef struct
+{
+    TboAction base;
+    Frame *frame;
+    gint x1;
+    gint y1;
+    gint width1;
+    gint height1;
+    gint x2;
+    gint y2;
+    gint width2;
+    gint height2;
+} TboActionFrameTransform;
+
+typedef struct
+{
+    TboAction base;
     TboObjectBase *obj;
     gboolean flipv1;
     gboolean fliph1;
@@ -97,6 +130,32 @@ typedef struct
     gint index1;
     gint index2;
 } TboActionObjectOrder;
+
+typedef struct
+{
+    TboAction base;
+    TboObjectBase *obj;
+    gint x1;
+    gint y1;
+    gint x2;
+    gint y2;
+} TboActionObjMove;
+
+typedef struct
+{
+    TboAction base;
+    TboObjectBase *obj;
+    gint x1;
+    gint y1;
+    gint width1;
+    gint height1;
+    gdouble angle1;
+    gint x2;
+    gint y2;
+    gint width2;
+    gint height2;
+    gdouble angle2;
+} TboActionObjTransform;
 
 typedef struct
 {
@@ -251,6 +310,41 @@ page_change_free (TboAction *action)
 }
 
 static void
+page_order_do (TboAction *action)
+{
+    TboActionPageOrder *page_action = (TboActionPageOrder *) action;
+
+    if (page_action->comic == NULL || page_action->page == NULL || !comic_has_page (page_action->comic, page_action->page))
+        return;
+
+    tbo_comic_reorder_page (page_action->comic, page_action->page, page_action->index2);
+    tbo_comic_set_current_page (page_action->comic, page_action->page);
+}
+
+static void
+page_order_undo (TboAction *action)
+{
+    TboActionPageOrder *page_action = (TboActionPageOrder *) action;
+
+    if (page_action->comic == NULL || page_action->page == NULL || !comic_has_page (page_action->comic, page_action->page))
+        return;
+
+    tbo_comic_reorder_page (page_action->comic, page_action->page, page_action->index1);
+    tbo_comic_set_current_page (page_action->comic, page_action->page);
+}
+
+static void
+page_order_free (TboAction *action)
+{
+    TboActionPageOrder *page_action = (TboActionPageOrder *) action;
+
+    if (page_action->comic != NULL)
+        g_object_remove_weak_pointer (G_OBJECT (page_action->comic), (gpointer *) &page_action->comic);
+    if (page_action->page != NULL)
+        g_object_unref (page_action->page);
+}
+
+static void
 frame_remove_do (TboAction *action)
 {
     TboActionFrameChange *frame_action = (TboActionFrameChange *) action;
@@ -338,6 +432,52 @@ apply_frame_state (TboActionFrameState *action,
 }
 
 static void
+apply_frame_position (Frame *frame, gint x, gint y)
+{
+    if (frame != NULL)
+        tbo_frame_set_position (frame, x, y);
+}
+
+static void
+apply_frame_transform (TboActionFrameTransform *action,
+                       gint x,
+                       gint y,
+                       gint width,
+                       gint height)
+{
+    if (action->frame != NULL)
+        tbo_frame_set_bounds (action->frame, x, y, width, height);
+}
+
+static void
+apply_object_position (TboObjectBase *obj, gint x, gint y)
+{
+    if (obj != NULL)
+    {
+        obj->x = x;
+        obj->y = y;
+    }
+}
+
+static void
+apply_object_transform (TboActionObjTransform *action,
+                        gint x,
+                        gint y,
+                        gint width,
+                        gint height,
+                        gdouble angle)
+{
+    if (action->obj == NULL)
+        return;
+
+    action->obj->x = x;
+    action->obj->y = y;
+    action->obj->width = width;
+    action->obj->height = height;
+    action->obj->angle = angle;
+}
+
+static void
 frame_state_do (TboAction *action)
 {
     TboActionFrameState *frame_action = (TboActionFrameState *) action;
@@ -347,6 +487,43 @@ frame_state_do (TboAction *action)
                        frame_action->width2, frame_action->height2,
                        frame_action->border2,
                        frame_action->r2, frame_action->g2, frame_action->b2);
+}
+
+static void
+frame_move_do (TboAction *action)
+{
+    TboActionFrameMove *frame_action = (TboActionFrameMove *) action;
+
+    apply_frame_position (frame_action->frame, frame_action->x2, frame_action->y2);
+}
+
+static void
+frame_move_undo (TboAction *action)
+{
+    TboActionFrameMove *frame_action = (TboActionFrameMove *) action;
+
+    apply_frame_position (frame_action->frame, frame_action->x1, frame_action->y1);
+}
+
+static void
+frame_move_free (TboAction *action)
+{
+    TboActionFrameMove *frame_action = (TboActionFrameMove *) action;
+
+    if (frame_action->frame != NULL)
+        g_object_remove_weak_pointer (G_OBJECT (frame_action->frame), (gpointer *) &frame_action->frame);
+}
+
+static void
+frame_transform_do (TboAction *action)
+{
+    TboActionFrameTransform *frame_action = (TboActionFrameTransform *) action;
+
+    apply_frame_transform (frame_action,
+                           frame_action->x2,
+                           frame_action->y2,
+                           frame_action->width2,
+                           frame_action->height2);
 }
 
 static void
@@ -362,9 +539,30 @@ frame_state_undo (TboAction *action)
 }
 
 static void
+frame_transform_undo (TboAction *action)
+{
+    TboActionFrameTransform *frame_action = (TboActionFrameTransform *) action;
+
+    apply_frame_transform (frame_action,
+                           frame_action->x1,
+                           frame_action->y1,
+                           frame_action->width1,
+                           frame_action->height1);
+}
+
+static void
 frame_state_free (TboAction *action)
 {
     TboActionFrameState *frame_action = (TboActionFrameState *) action;
+
+    if (frame_action->frame != NULL)
+        g_object_remove_weak_pointer (G_OBJECT (frame_action->frame), (gpointer *) &frame_action->frame);
+}
+
+static void
+frame_transform_free (TboAction *action)
+{
+    TboActionFrameTransform *frame_action = (TboActionFrameTransform *) action;
 
     if (frame_action->frame != NULL)
         g_object_remove_weak_pointer (G_OBJECT (frame_action->frame), (gpointer *) &frame_action->frame);
@@ -383,6 +581,44 @@ object_flags_do (TboAction *action)
 }
 
 static void
+object_move_do (TboAction *action)
+{
+    TboActionObjMove *obj_action = (TboActionObjMove *) action;
+
+    apply_object_position (obj_action->obj, obj_action->x2, obj_action->y2);
+}
+
+static void
+object_move_undo (TboAction *action)
+{
+    TboActionObjMove *obj_action = (TboActionObjMove *) action;
+
+    apply_object_position (obj_action->obj, obj_action->x1, obj_action->y1);
+}
+
+static void
+object_move_free (TboAction *action)
+{
+    TboActionObjMove *obj_action = (TboActionObjMove *) action;
+
+    if (obj_action->obj != NULL)
+        g_object_remove_weak_pointer (G_OBJECT (obj_action->obj), (gpointer *) &obj_action->obj);
+}
+
+static void
+object_transform_do (TboAction *action)
+{
+    TboActionObjTransform *obj_action = (TboActionObjTransform *) action;
+
+    apply_object_transform (obj_action,
+                            obj_action->x2,
+                            obj_action->y2,
+                            obj_action->width2,
+                            obj_action->height2,
+                            obj_action->angle2);
+}
+
+static void
 object_flags_undo (TboAction *action)
 {
     TboActionObjectFlags *obj_action = (TboActionObjectFlags *) action;
@@ -395,9 +631,31 @@ object_flags_undo (TboAction *action)
 }
 
 static void
+object_transform_undo (TboAction *action)
+{
+    TboActionObjTransform *obj_action = (TboActionObjTransform *) action;
+
+    apply_object_transform (obj_action,
+                            obj_action->x1,
+                            obj_action->y1,
+                            obj_action->width1,
+                            obj_action->height1,
+                            obj_action->angle1);
+}
+
+static void
 object_flags_free (TboAction *action)
 {
     TboActionObjectFlags *obj_action = (TboActionObjectFlags *) action;
+
+    if (obj_action->obj != NULL)
+        g_object_remove_weak_pointer (G_OBJECT (obj_action->obj), (gpointer *) &obj_action->obj);
+}
+
+static void
+object_transform_free (TboAction *action)
+{
+    TboActionObjTransform *obj_action = (TboActionObjTransform *) action;
 
     if (obj_action->obj != NULL)
         g_object_remove_weak_pointer (G_OBJECT (obj_action->obj), (gpointer *) &obj_action->obj);
@@ -691,6 +949,25 @@ tbo_action_page_remove_new (Comic *comic, Page *page, int index)
 }
 
 TboAction *
+tbo_action_page_reorder_new (Comic *comic, Page *page, int index1, int index2)
+{
+    TboActionPageOrder *action = (TboActionPageOrder *) tbo_action_new (TboActionPageOrder);
+
+    action->comic = comic;
+    action->page = g_object_ref (page);
+    action->index1 = index1;
+    action->index2 = index2;
+    action->base.action_do = page_order_do;
+    action->base.action_undo = page_order_undo;
+    action->base.action_free = page_order_free;
+
+    if (action->comic != NULL)
+        g_object_add_weak_pointer (G_OBJECT (action->comic), (gpointer *) &action->comic);
+
+    return (TboAction *) action;
+}
+
+TboAction *
 tbo_action_frame_remove_new (Page *page, Frame *frame, int index)
 {
     TboActionFrameChange *action = (TboActionFrameChange *) tbo_action_new (TboActionFrameChange);
@@ -751,6 +1028,58 @@ tbo_action_frame_state_new (Frame *frame,
 }
 
 TboAction *
+tbo_action_frame_move_new (Frame *frame, int x1, int y1, int x2, int y2)
+{
+    TboActionFrameMove *action = (TboActionFrameMove *) tbo_action_new (TboActionFrameMove);
+
+    action->frame = frame;
+    action->x1 = x1;
+    action->y1 = y1;
+    action->x2 = x2;
+    action->y2 = y2;
+    action->base.action_do = frame_move_do;
+    action->base.action_undo = frame_move_undo;
+    action->base.action_free = frame_move_free;
+
+    if (action->frame != NULL)
+        g_object_add_weak_pointer (G_OBJECT (action->frame), (gpointer *) &action->frame);
+
+    return (TboAction *) action;
+}
+
+TboAction *
+tbo_action_frame_transform_new (Frame *frame,
+                                int x1,
+                                int y1,
+                                int width1,
+                                int height1,
+                                int x2,
+                                int y2,
+                                int width2,
+                                int height2)
+{
+    TboActionFrameTransform *action = (TboActionFrameTransform *) tbo_action_new (TboActionFrameTransform);
+
+    action->frame = frame;
+    action->x1 = x1;
+    action->y1 = y1;
+    action->width1 = width1;
+    action->height1 = height1;
+    action->x2 = x2;
+    action->y2 = y2;
+    action->width2 = width2;
+    action->height2 = height2;
+    action->base.action_do = frame_transform_do;
+    action->base.action_undo = frame_transform_undo;
+    action->base.action_free = frame_transform_free;
+
+    if (action->frame != NULL)
+        g_object_add_weak_pointer (G_OBJECT (action->frame), (gpointer *) &action->frame);
+
+    return (TboAction *) action;
+}
+
+TboAction *
 tbo_action_object_flags_new (TboObjectBase *object,
                              gboolean flipv1,
                              gboolean fliph1,
@@ -792,6 +1121,62 @@ tbo_action_object_order_new (Frame *frame,
 
     if (action->frame != NULL)
         g_object_add_weak_pointer (G_OBJECT (action->frame), (gpointer *) &action->frame);
+    if (action->obj != NULL)
+        g_object_add_weak_pointer (G_OBJECT (action->obj), (gpointer *) &action->obj);
+
+    return (TboAction *) action;
+}
+
+TboAction *
+tbo_action_object_move_new (TboObjectBase *object, int x1, int y1, int x2, int y2)
+{
+    TboActionObjMove *action = (TboActionObjMove *) tbo_action_new (TboActionObjMove);
+
+    action->obj = object;
+    action->x1 = x1;
+    action->y1 = y1;
+    action->x2 = x2;
+    action->y2 = y2;
+    action->base.action_do = object_move_do;
+    action->base.action_undo = object_move_undo;
+    action->base.action_free = object_move_free;
+
+    if (action->obj != NULL)
+        g_object_add_weak_pointer (G_OBJECT (action->obj), (gpointer *) &action->obj);
+
+    return (TboAction *) action;
+}
+
+TboAction *
+tbo_action_object_transform_new (TboObjectBase *object,
+                                 int x1,
+                                 int y1,
+                                 int width1,
+                                 int height1,
+                                 gdouble angle1,
+                                 int x2,
+                                 int y2,
+                                 int width2,
+                                 int height2,
+                                 gdouble angle2)
+{
+    TboActionObjTransform *action = (TboActionObjTransform *) tbo_action_new (TboActionObjTransform);
+
+    action->obj = object;
+    action->x1 = x1;
+    action->y1 = y1;
+    action->width1 = width1;
+    action->height1 = height1;
+    action->angle1 = angle1;
+    action->x2 = x2;
+    action->y2 = y2;
+    action->width2 = width2;
+    action->height2 = height2;
+    action->angle2 = angle2;
+    action->base.action_do = object_transform_do;
+    action->base.action_undo = object_transform_undo;
+    action->base.action_free = object_transform_free;
+
     if (action->obj != NULL)
         g_object_add_weak_pointer (G_OBJECT (action->obj), (gpointer *) &action->obj);
 

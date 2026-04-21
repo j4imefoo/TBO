@@ -25,6 +25,7 @@
 #include "tbo-file-dialog.h"
 #include "tbo-window.h"
 #include "comic.h"
+#include "ui-menu.h"
 
 gboolean
 tbo_comic_save_dialog (GtkWidget *widget, TboWindow *window)
@@ -52,6 +53,8 @@ tbo_comic_saveas_dialog (GtkWidget *widget, TboWindow *window)
         if (tbo_comic_save (window, filename))
         {
             tbo_window_set_path (window, filename);
+            tbo_window_add_recent_project (filename);
+            tbo_menu_refresh (window);
             g_free (filename);
             return TRUE;
         }
