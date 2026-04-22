@@ -26,6 +26,7 @@ char **tbo_files_get_dirs (void);
 int tbo_files_prefix_len (char *str);
 void tbo_files_free (char **files);
 gchar *tbo_files_expand_path (const gchar *source);
-gboolean tbo_files_is_svg_file (char *source);
+gboolean tbo_files_is_svg_file (const gchar *source);
+gboolean tbo_files_is_supported_asset_file (const gchar *source);
 
 #endif

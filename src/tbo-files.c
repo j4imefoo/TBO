@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
 #include "tbo-files.h"
 #include <glib.h>
 #include "tbo-utils.h"
@@ -96,27 +97,39 @@ tbo_files_expand_path (const gchar *source)
 }
 
 gboolean
-tbo_files_is_svg_file (char *source)
+tbo_files_is_svg_file (const gchar *source)
 {
-    gchar **paths;
-    gchar **ext;
-    gchar *lower_ext;
-    gboolean is_svg = FALSE;
+    const gchar *ext;
 
-    paths = g_strsplit (source, ".", 0);
+    if (source == NULL || *source == '\0')
+        return FALSE;
 
-    ext = paths;
-    while (*ext) ext++;
-    ext--;
+    ext = strrchr (source, '.');
+    if (ext == NULL)
+        return FALSE;
 
-    lower_ext = g_ascii_strdown (*ext, -1);
+    return g_ascii_strcasecmp (ext + 1, "svg") == 0;
+}
 
-    if (strcmp (lower_ext, "svg") == 0) {
-        is_svg = TRUE;
-    }
+gboolean
+tbo_files_is_supported_asset_file (const gchar *source)
+{
+    GdkPixbufFormat *format;
+    gchar *path;
+    gboolean is_supported = FALSE;
 
-    g_strfreev (paths);
-    g_free (lower_ext);
+    if (tbo_files_is_svg_file (source))
+        return TRUE;
 
-    return is_svg;
+    if (source == NULL || *source == '\0')
+        return FALSE;
+
+    path = tbo_files_expand_path (source);
+    format = gdk_pixbuf_get_file_info (path, NULL, NULL);
+    if (format != NULL)
+        is_supported = TRUE;
+
+    g_free (path);
+
+    return is_supported;
 }

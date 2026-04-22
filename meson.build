@@ -399,6 +399,14 @@ assets_browser_search_check = executable(
   install: false
 )
 
+doodle_raster_catalog_check = executable(
+  'doodle-raster-catalog-check',
+  common_sources + files('tests/doodle_raster_catalog_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
 export_page_range_check = executable(
   'export-page-range-check',
   common_sources + files('tests/export_page_range_check.c'),
@@ -450,6 +458,14 @@ frame_count_status_check = executable(
 export_formats_check = executable(
   'export-formats-check',
   common_sources + files('tests/export_formats_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+raster_render_check = executable(
+  'raster-render-check',
+  common_sources + files('tests/raster_render_check.c'),
   dependencies: deps,
   include_directories: inc,
   install: false
@@ -848,6 +864,12 @@ test(
 )
 
 test(
+  'doodle-raster-catalog-check',
+  doodle_raster_catalog_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
   'export-page-range-check',
   export_page_range_check,
   env: ['G_DEBUG=fatal-criticals']
@@ -886,6 +908,12 @@ test(
 test(
   'export-formats-check',
   export_formats_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'raster-render-check',
+  raster_render_check,
   env: ['G_DEBUG=fatal-criticals']
 )
 

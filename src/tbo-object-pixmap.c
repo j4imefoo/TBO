@@ -70,9 +70,11 @@ update_surface_cache (TboObjectPixmap *pixmap)
     int width;
     int height;
     int src_stride;
+    int n_channels;
     guchar *src;
     int x;
     int y;
+    gboolean has_alpha;
 
     if (pixmap->scaled_pixbuf == NULL)
         return FALSE;
@@ -86,7 +88,12 @@ update_surface_cache (TboObjectPixmap *pixmap)
     width = gdk_pixbuf_get_width (pixmap->scaled_pixbuf);
     height = gdk_pixbuf_get_height (pixmap->scaled_pixbuf);
     src_stride = gdk_pixbuf_get_rowstride (pixmap->scaled_pixbuf);
+    n_channels = gdk_pixbuf_get_n_channels (pixmap->scaled_pixbuf);
+    has_alpha = gdk_pixbuf_get_has_alpha (pixmap->scaled_pixbuf);
     src = gdk_pixbuf_get_pixels (pixmap->scaled_pixbuf);
+
+    if (n_channels < 3)
+        return FALSE;
 
     surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width, height);
     if (cairo_surface_status (surface) != CAIRO_STATUS_SUCCESS)
@@ -105,10 +112,11 @@ update_surface_cache (TboObjectPixmap *pixmap)
 
         for (x = 0; x < width; x++)
         {
-            guchar r = row[x * 4 + 0];
-            guchar g = row[x * 4 + 1];
-            guchar b = row[x * 4 + 2];
-            guchar a = row[x * 4 + 3];
+            guchar *pixel = row + (x * n_channels);
+            guchar r = pixel[0];
+            guchar g = pixel[1];
+            guchar b = pixel[2];
+            guchar a = has_alpha && n_channels >= 4 ? pixel[3] : 255;
 
             if (a != 255)
             {

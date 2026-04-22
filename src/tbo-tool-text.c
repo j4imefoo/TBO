@@ -45,6 +45,25 @@ static void on_text_end_user_action (GtkTextBuffer *buf, TboToolText *self);
 static void tbo_tool_text_capture_state (TboToolText *self);
 static void tbo_tool_text_clear_capture_state (TboToolText *self);
 static gboolean flush_pending_text_change (gpointer data);
+static void tbo_tool_text_focus_editor (TboToolText *self, gboolean select_all);
+
+static void
+tbo_tool_text_focus_editor (TboToolText *self, gboolean select_all)
+{
+    GtkTextIter start;
+    GtkTextIter end;
+
+    if (self->text_view == NULL || self->text_buffer == NULL)
+        return;
+
+    if (select_all)
+    {
+        gtk_text_buffer_get_bounds (self->text_buffer, &start, &end);
+        gtk_text_buffer_select_range (self->text_buffer, &start, &end);
+    }
+
+    gtk_widget_grab_focus (self->text_view);
+}
 
 static void
 tbo_tool_text_capture_state (TboToolText *self)
@@ -360,6 +379,7 @@ setup_toolarea (TboToolText *self)
     scroll = gtk_scrolled_window_new ();
     gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     view = gtk_text_view_new ();
+    self->text_view = view;
     g_signal_connect (view, "notify::has-focus", G_CALLBACK (on_tview_focus_changed), self);
 
     gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW (view), GTK_WRAP_WORD);
@@ -391,6 +411,8 @@ on_unselect (TboToolBase *tool)
 
     tbo_tool_text_set_selected (self, NULL);
     tbo_empty_tool_area (tool->tbo);
+    self->text_view = NULL;
+    self->text_buffer = NULL;
     tbo_window_set_key_binder (tool->tbo, TRUE);
 }
 
@@ -452,6 +474,8 @@ on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
         tbo_toolbar_update (tool->tbo->toolbar);
     }
     tbo_tool_text_set_selected (self, text);
+    if (!found)
+        tbo_tool_text_focus_editor (self, TRUE);
     tbo_drawing_update (TBO_DRAWING (tool->tbo->drawing));
 }
 
@@ -488,6 +512,7 @@ tbo_tool_text_init (TboToolText *self)
     self->font = NULL;
     self->font_size = NULL;
     self->font_color = NULL;
+    self->text_view = NULL;
     self->text_selected = NULL;
     self->text_buffer = NULL;
     self->syncing_controls = FALSE;

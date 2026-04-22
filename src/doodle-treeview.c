@@ -34,6 +34,7 @@ typedef struct
     TboWindow *tbo;
     GString *path;
     gboolean top_level;
+    gboolean bubble_mode;
 } DoodleExpanderData;
 
 typedef struct
@@ -45,6 +46,9 @@ typedef struct
 } DoodleBrowserState;
 
 static GHashTable *THUMB_CACHE = NULL;
+
+#define TBO_BODY_THUMB_MIN_DIM 80
+#define TBO_BODY_THUMB_MAX_DIM 96
 
 static GdkPixbuf *get_thumbnail_pixbuf (const gchar *path, const gchar *relative_path);
 static gint compare_gstrings (gconstpointer a, gconstpointer b);
@@ -97,10 +101,10 @@ get_thumbnail_pixbuf (const gchar *path, const gchar *relative_path)
     max_dim = MAX (width, height);
     is_body = g_strrstr (relative_path, "/body/") != NULL || g_str_has_prefix (relative_path, "body/");
 
-    if (is_body && max_dim < 128)
-        scale = 128.0 / max_dim;
-    else if (is_body && max_dim > 160)
-        scale = 160.0 / max_dim;
+    if (is_body && max_dim < TBO_BODY_THUMB_MIN_DIM)
+        scale = (gdouble) TBO_BODY_THUMB_MIN_DIM / max_dim;
+    else if (is_body && max_dim > TBO_BODY_THUMB_MAX_DIM)
+        scale = (gdouble) TBO_BODY_THUMB_MAX_DIM / max_dim;
     else
         scale = 1.0;
 
@@ -209,6 +213,12 @@ get_files (gchar *base_dir, gboolean isdir, gboolean bubble_mode)
         }
         else if (!isdir && !S_ISDIR (filestat.st_mode))
         {
+            if (!tbo_files_is_supported_asset_file (complete_dir))
+            {
+                g_free (complete_dir);
+                continue;
+            }
+
             GString *filename_to_append = g_string_new (complete_dir);
             g_array_append_val (array, filename_to_append);
         }
@@ -347,10 +357,13 @@ static void
 asset_button_clicked_cb (GtkButton *button, gpointer user_data)
 {
     TboWindow *tbo = user_data;
-    const gchar *asset_path = g_object_get_data (G_OBJECT (button), "tbo-asset-full-path");
+    const gchar *asset_path = g_object_get_data (G_OBJECT (button), "tbo-asset-relative-path");
 
     if (tbo == NULL)
         return;
+
+    if (asset_path == NULL)
+        asset_path = g_object_get_data (G_OBJECT (button), "tbo-asset-full-path");
 
     if (tbo_dnd_insert_asset_centered (tbo, asset_path) != NULL)
         gtk_widget_grab_focus (tbo->drawing);
@@ -408,7 +421,8 @@ build_image_grid_internal (TboWindow *tbo, gchar *dir, const gchar *query, gbool
         thumb_width = gdk_pixbuf_get_width (pixbuf);
         thumb_height = gdk_pixbuf_get_height (pixbuf);
         image = tbo_picture_new_for_pixbuf (pixbuf);
-        gtk_picture_set_can_shrink (GTK_PICTURE (image), FALSE);
+        gtk_picture_set_can_shrink (GTK_PICTURE (image), TRUE);
+        gtk_picture_set_content_fit (GTK_PICTURE (image), GTK_CONTENT_FIT_CONTAIN);
         gtk_widget_set_size_request (image, thumb_width, thumb_height);
 
         button = gtk_button_new ();
@@ -507,12 +521,19 @@ on_expand_cb (GtkExpander *expander, GParamSpec *pspec, DoodleExpanderData *data
             child_data->tbo = data->tbo;
             child_data->path = g_string_new (subdir->str);
             child_data->top_level = FALSE;
+            child_data->bubble_mode = data->bubble_mode;
             g_signal_connect_data (child_expander,
                                    "notify::expanded",
                                    G_CALLBACK (on_expand_cb),
                                    child_data,
                                    free_expander_data,
                                    0);
+
+            if (data->bubble_mode)
+            {
+                gtk_expander_set_expanded (GTK_EXPANDER (child_expander), TRUE);
+                on_expand_cb (GTK_EXPANDER (child_expander), NULL, child_data);
+            }
         }
 
         free_gstring_array (subdirs);
@@ -624,6 +645,7 @@ rebuild_browser_content (DoodleBrowserState *state)
                 expander_data->tbo = state->tbo;
                 expander_data->path = g_string_new (dir->str);
                 expander_data->top_level = TRUE;
+                expander_data->bubble_mode = state->bubble_mode;
                 g_signal_connect_data (expander,
                                        "notify::expanded",
                                        G_CALLBACK (on_expand_cb),

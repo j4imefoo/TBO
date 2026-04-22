@@ -35,18 +35,6 @@ find_search_entry (GtkWidget *widget)
     return NULL;
 }
 
-static void
-expand_all_expanders (GtkWidget *widget)
-{
-    GtkWidget *child;
-
-    if (GTK_IS_EXPANDER (widget))
-        gtk_expander_set_expanded (GTK_EXPANDER (widget), TRUE);
-
-    for (child = gtk_widget_get_first_child (widget); child != NULL; child = gtk_widget_get_next_sibling (child))
-        expand_all_expanders (child);
-}
-
 static GtkWidget *
 find_first_asset_button (GtkWidget *widget)
 {
@@ -109,7 +97,6 @@ main (void)
     search = find_search_entry (browser);
     if (search == NULL)
         return 7;
-    expand_all_expanders (browser);
     drain_events ();
 
     asset_button = find_first_asset_button (browser);

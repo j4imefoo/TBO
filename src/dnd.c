@@ -17,6 +17,7 @@
  */
 
 
+#include <math.h>
 #include <string.h>
 #include <gtk/gtk.h>
 #include <glib/gi18n.h>
@@ -32,6 +33,9 @@
 #include "tbo-undo.h"
 #include "tbo-widget.h"
 
+#define TBO_DND_MAX_FRAME_WIDTH_FRACTION 1.0
+#define TBO_DND_MAX_FRAME_HEIGHT_FRACTION 0.5
+
 typedef enum
 {
     TBO_DND_INSERT_OK,
@@ -45,10 +49,111 @@ typedef enum
 static TboObjectBase *
 create_asset (const gchar *asset_path, gint x, gint y)
 {
-    if (tbo_files_is_svg_file ((gchar *) asset_path))
+    if (tbo_files_is_svg_file (asset_path))
         return TBO_OBJECT_BASE (tbo_object_svg_new_with_params (x, y, 0, 0, (gchar *) asset_path));
 
+    if (!tbo_files_is_supported_asset_file (asset_path))
+        return NULL;
+
     return TBO_OBJECT_BASE (tbo_object_pixmap_new_with_params (x, y, 0, 0, (gchar *) asset_path));
+}
+
+static gboolean
+get_svg_asset_size (const gchar *asset_path, gint *width, gint *height)
+{
+    GError *error = NULL;
+    RsvgHandle *handle;
+    gdouble width_px = 0.0;
+    gdouble height_px = 0.0;
+    gchar *path;
+    gboolean ok = FALSE;
+
+    path = tbo_files_expand_path (asset_path);
+    handle = rsvg_handle_new_from_file (path, &error);
+    if (handle != NULL)
+    {
+        ok = rsvg_handle_get_intrinsic_size_in_pixels (handle, &width_px, &height_px) &&
+             width_px > 0.0 && height_px > 0.0;
+        g_object_unref (handle);
+    }
+    if (error != NULL)
+        g_error_free (error);
+    g_free (path);
+
+    if (!ok)
+        return FALSE;
+
+    *width = MAX (1, (gint) ceil (width_px));
+    *height = MAX (1, (gint) ceil (height_px));
+    return TRUE;
+}
+
+static gboolean
+get_pixbuf_asset_size (const gchar *asset_path, gint *width, gint *height)
+{
+    GdkPixbuf *pixbuf;
+    GError *error = NULL;
+    gchar *path;
+    gboolean ok = FALSE;
+
+    path = tbo_files_expand_path (asset_path);
+    pixbuf = gdk_pixbuf_new_from_file (path, &error);
+    if (pixbuf != NULL)
+    {
+        *width = gdk_pixbuf_get_width (pixbuf);
+        *height = gdk_pixbuf_get_height (pixbuf);
+        ok = *width > 0 && *height > 0;
+        g_object_unref (pixbuf);
+    }
+    if (error != NULL)
+        g_error_free (error);
+    g_free (path);
+
+    return ok;
+}
+
+static gboolean
+get_asset_size (const gchar *asset_path, gint *width, gint *height)
+{
+    if (asset_path == NULL || width == NULL || height == NULL)
+        return FALSE;
+
+    if (tbo_files_is_svg_file (asset_path))
+        return get_svg_asset_size (asset_path, width, height);
+
+    return get_pixbuf_asset_size (asset_path, width, height);
+}
+
+static void
+apply_initial_asset_size_limit (Frame *frame, TboObjectBase *asset, const gchar *asset_path)
+{
+    gint asset_width;
+    gint asset_height;
+    gint max_width;
+    gint max_height;
+    gdouble scale;
+
+    if (frame == NULL || asset == NULL)
+        return;
+    if (!get_asset_size (asset_path, &asset_width, &asset_height))
+        return;
+
+    max_width = MAX (1, (gint) floor (tbo_frame_get_width (frame) * TBO_DND_MAX_FRAME_WIDTH_FRACTION));
+    max_height = MAX (1, (gint) floor (tbo_frame_get_height (frame) * TBO_DND_MAX_FRAME_HEIGHT_FRACTION));
+    if (asset_width <= max_width && asset_height <= max_height)
+        return;
+
+    scale = MIN (max_width / (gdouble) asset_width,
+                 max_height / (gdouble) asset_height);
+    asset->width = MAX (1, (gint) round (asset_width * scale));
+    asset->height = MAX (1, (gint) round (asset_height * scale));
+
+    asset->x = CLAMP (asset->x - (asset->width / 2),
+                      0,
+                      MAX (0, tbo_frame_get_width (frame) - asset->width));
+    asset->y = CLAMP (asset->y - (asset->height / 2),
+                      0,
+                      MAX (0, tbo_frame_get_height (frame) - asset->height));
 }
 
 static void
@@ -102,6 +207,8 @@ insert_asset_into_frame (TboWindow *tbo,
     asset = create_asset (asset_path, x, y);
     if (asset == NULL)
         return TBO_DND_INSERT_INVALID_ASSET;
+
+    apply_initial_asset_size_limit (frame, asset, asset_path);
 
     tbo_frame_add_obj (frame, asset);
     tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_add_new (frame, asset));

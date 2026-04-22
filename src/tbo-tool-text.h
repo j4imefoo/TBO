@@ -45,6 +45,7 @@ struct _TboToolText
     GtkWidget *font;
     GtkWidget *font_size;
     GtkWidget *font_color;
+    GtkWidget *text_view;
     TboObjectText *text_selected;
     GtkTextBuffer *text_buffer;
     gboolean syncing_controls;
