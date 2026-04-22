@@ -1,7 +1,7 @@
 # Maintainer: Jaime <j4imefoo@users.noreply.github.com>
 
 pkgname=tbo-git
-pkgver=r1.0
+pkgver=2.0+r272.8ec0fc3
 pkgrel=1
 pkgdesc="Comic editor built with GTK4"
 arch=('x86_64')
@@ -14,7 +14,7 @@ sha256sums=('SKIP')
 
 pkgver() {
   cd TBO
-  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  printf "2.0+r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 build() {
