@@ -55,7 +55,13 @@ static gchar *get_recovery_dir_path (void);
 static gchar *get_recovery_meta_path (const gchar *autosave_file);
 static GKeyFile *load_state_key_file (void);
 static void save_state_key_file (GKeyFile *kf);
-static gboolean confirm_close (TboWindow *tbo);
+typedef enum
+{
+    TBO_CONFIRM_CLOSE_CANCEL,
+    TBO_CONFIRM_CLOSE_CONTINUE,
+    TBO_CONFIRM_CLOSE_DISCARD,
+} TboConfirmCloseResult;
+static TboConfirmCloseResult confirm_close (TboWindow *tbo);
 static void update_window_title (TboWindow *tbo);
 static void apply_theme_preferences (void);
 static TboThemeMode load_theme_mode_preference (void);
@@ -649,6 +655,8 @@ detach_document_state (TboWindow *tbo)
     }
 
     tbo_undo_stack_clear (tbo->undo_stack);
+    tbo->undo_stack->current_state_id = 0;
+    tbo->undo_stack->next_state_id = 1;
     tbo_tooltip_reset (tbo);
 }
 
@@ -842,34 +850,24 @@ get_state_file_path (void)
 static gchar *
 load_persisted_path (const gchar *key)
 {
-    GKeyFile *kf = g_key_file_new ();
-    gchar *state_file = get_state_file_path ();
+    GKeyFile *kf = load_state_key_file ();
     gchar *value = NULL;
 
-    if (g_key_file_load_from_file (kf, state_file, G_KEY_FILE_NONE, NULL))
+    if (g_key_file_has_group (kf, "paths"))
         value = g_key_file_get_string (kf, "paths", key, NULL);
 
     g_key_file_unref (kf);
-    g_free (state_file);
     return value;
 }
 
 static void
 store_persisted_path (const gchar *key, const gchar *value)
 {
-    GKeyFile *kf = g_key_file_new ();
-    gchar *state_file = get_state_file_path ();
-    gchar *content;
-    gsize len;
+    GKeyFile *kf = load_state_key_file ();
 
-    g_key_file_load_from_file (kf, state_file, G_KEY_FILE_NONE, NULL);
     g_key_file_set_string (kf, "paths", key, value);
-    content = g_key_file_to_data (kf, &len, NULL);
-    g_file_set_contents (state_file, content, len, NULL);
-
-    g_free (content);
+    save_state_key_file (kf);
     g_key_file_unref (kf);
-    g_free (state_file);
 }
 
 static gchar *
@@ -884,10 +882,10 @@ get_dirname_or_home (const gchar *path)
 gboolean
 tbo_window_prepare_for_document_replace (TboWindow *tbo)
 {
-    return confirm_close (tbo);
+    return confirm_close (tbo) != TBO_CONFIRM_CLOSE_CANCEL;
 }
 
-static gboolean
+static TboConfirmCloseResult
 confirm_close (TboWindow *tbo)
 {
     gint response;
@@ -899,7 +897,7 @@ confirm_close (TboWindow *tbo)
     };
 
     if (!tbo_window_has_unsaved_changes (tbo))
-        return TRUE;
+        return TBO_CONFIRM_CLOSE_CONTINUE;
 
     response = tbo_alert_choose (GTK_WINDOW (tbo->window),
                                  _("Do you want to save your work before closing?"),
@@ -909,15 +907,12 @@ confirm_close (TboWindow *tbo)
                                  2);
 
     if (response == 2)
-        return tbo_comic_save_dialog (NULL, tbo);
+        return tbo_comic_save_dialog (NULL, tbo) ? TBO_CONFIRM_CLOSE_CONTINUE : TBO_CONFIRM_CLOSE_CANCEL;
 
     if (response == 1)
-    {
-        tbo_window_mark_clean (tbo);
-        return TRUE;
-    }
+        return TBO_CONFIRM_CLOSE_DISCARD;
 
-    return FALSE;
+    return TBO_CONFIRM_CLOSE_CANCEL;
 }
 
 static void
@@ -1309,6 +1304,7 @@ tbo_window_new (GtkWidget *window, GtkWidget *dw_scroll,
     tbo->key_binder = TRUE;
     tbo->dirty = FALSE;
     tbo->destroying = FALSE;
+    tbo->clean_state_id = 0;
     update_window_title (tbo);
 
     return tbo;
@@ -1389,10 +1385,24 @@ tbo_window_mark_dirty (TboWindow *tbo)
     schedule_autosave (tbo);
 }
 
+static void
+update_dirty_state_from_history (TboWindow *tbo)
+{
+    if (tbo == NULL || tbo->undo_stack == NULL)
+        return;
+
+    if (tbo->undo_stack->current_state_id == tbo->clean_state_id)
+        tbo_window_mark_clean (tbo);
+    else
+        tbo_window_mark_dirty (tbo);
+}
+
 void
 tbo_window_mark_clean (TboWindow *tbo)
 {
     tbo->dirty = FALSE;
+    if (tbo->undo_stack != NULL)
+        tbo->clean_state_id = tbo->undo_stack->current_state_id;
     update_window_title (tbo);
     if (tbo->autosave_timeout_id != 0)
     {
@@ -1432,7 +1442,11 @@ tbo_window_recover_file (TboWindow *tbo, const gchar *autosave_file)
         return FALSE;
 
     source_path = load_recovery_source_path (autosave_file);
-    tbo_comic_open (tbo, (char *) autosave_file);
+    if (!tbo_comic_open (tbo, (char *) autosave_file))
+    {
+        g_free (source_path);
+        return FALSE;
+    }
 
     set_window_path (&tbo->path, source_path);
     if (source_path != NULL)
@@ -1459,7 +1473,9 @@ tbo_window_open_recent_project (TboWindow *tbo, const gchar *path)
     if (!tbo_window_prepare_for_document_replace (tbo))
         return FALSE;
 
-    tbo_comic_open (tbo, (char *) path);
+    if (!tbo_comic_open (tbo, (char *) path))
+        return FALSE;
+
     tbo_window_add_recent_project (path);
     tbo_menu_refresh (tbo);
     return TRUE;
@@ -1573,18 +1589,18 @@ tbo_window_get_page_count (TboWindow *tbo)
     return gtk_notebook_get_n_pages (GTK_NOTEBOOK (tbo->notebook));
 }
 
-gboolean 
-tbo_window_free_cb (GtkWidget *widget, GdkEvent *event,
-                    TboWindow *tbo)
-{
-    return !confirm_close (tbo);
-}
-
 gboolean
 tbo_window_close_request_cb (GtkWindow *window, TboWindow *tbo)
 {
-    if (confirm_close (tbo))
+    TboConfirmCloseResult result = confirm_close (tbo);
+
+    (void) window;
+
+    if (result != TBO_CONFIRM_CLOSE_CANCEL)
     {
+        if (result == TBO_CONFIRM_CLOSE_DISCARD)
+            tbo_window_mark_clean (tbo);
+
         tbo_window_reset_document_state (tbo);
         tbo->destroying = TRUE;
         return FALSE;
@@ -1841,9 +1857,11 @@ gboolean
 tbo_window_undo_cb (GtkWidget *widget, TboWindow *tbo) {
     gint old_page_count = tbo_window_get_page_count (tbo);
 
+    (void) widget;
+
     tbo_undo_stack_undo (tbo->undo_stack);
 
-    tbo_window_mark_dirty (tbo);
+    update_dirty_state_from_history (tbo);
     sync_page_widgets_with_comic (tbo);
     if (old_page_count != tbo_window_get_page_count (tbo) ||
         gtk_notebook_get_current_page (GTK_NOTEBOOK (tbo->notebook)) != tbo_comic_page_index (tbo->comic) ||
@@ -1859,9 +1877,11 @@ gboolean
 tbo_window_redo_cb (GtkWidget *widget, TboWindow *tbo) {
     gint old_page_count = tbo_window_get_page_count (tbo);
 
+    (void) widget;
+
     tbo_undo_stack_redo (tbo->undo_stack);
 
-    tbo_window_mark_dirty (tbo);
+    update_dirty_state_from_history (tbo);
     sync_page_widgets_with_comic (tbo);
     if (old_page_count != tbo_window_get_page_count (tbo) ||
         gtk_notebook_get_current_page (GTK_NOTEBOOK (tbo->notebook)) != tbo_comic_page_index (tbo->comic) ||

@@ -13,6 +13,8 @@ main (void)
     Page *page2;
     const gchar *status;
 
+    g_setenv ("LC_ALL", "C.UTF-8", TRUE);
+    g_setenv ("LANGUAGE", "C", TRUE);
     gtk_init ();
 
     app = gtk_application_new ("net.danigm.tbo.pagestatus", G_APPLICATION_DEFAULT_FLAGS);

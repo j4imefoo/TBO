@@ -11,11 +11,14 @@
 #include "tbo-widget.h"
 
 #define TBO_DIALOG_RUN_DATA_KEY "tbo-dialog-run-data"
+#define TBO_ALERT_TEST_RESPONSE_NONE G_MININT
 
 struct alert_run_data {
     GMainLoop *loop;
     gint response;
 };
+
+static gint alert_test_response = TBO_ALERT_TEST_RESPONSE_NONE;
 
 static void
 alert_response_cb (GObject *source, GAsyncResult *result, gpointer user_data)
@@ -210,6 +213,9 @@ tbo_alert_choose (GtkWindow *parent,
     GtkAlertDialog *dialog;
     struct alert_run_data data;
 
+    if (alert_test_response != TBO_ALERT_TEST_RESPONSE_NONE)
+        return alert_test_response;
+
     dialog = gtk_alert_dialog_new ("%s", message);
     gtk_alert_dialog_set_detail (dialog, detail);
     gtk_alert_dialog_set_buttons (dialog, buttons);
@@ -232,6 +238,18 @@ tbo_alert_show (GtkWindow *parent, const gchar *message, const gchar *detail)
     static const gchar *buttons[] = {"Close", NULL};
 
     tbo_alert_choose (parent, message, detail, buttons, 0, 0);
+}
+
+void
+tbo_alert_set_test_response (gint response)
+{
+    alert_test_response = response;
+}
+
+void
+tbo_alert_clear_test_response (void)
+{
+    alert_test_response = TBO_ALERT_TEST_RESPONSE_NONE;
 }
 
 void
@@ -291,39 +309,4 @@ tbo_picture_new_for_pixbuf (GdkPixbuf *pixbuf)
     picture = gtk_picture_new_for_paintable (GDK_PAINTABLE (texture));
     g_object_unref (texture);
     return picture;
-}
-
-GtkWidget *
-tbo_image_new_for_pixbuf (GdkPixbuf *pixbuf)
-{
-    gchar *buffer = NULL;
-    gsize size = 0;
-    GBytes *bytes;
-    GdkTexture *texture;
-    GtkWidget *image;
-    GError *error = NULL;
-
-    if (pixbuf == NULL)
-        return gtk_image_new ();
-
-    if (!gdk_pixbuf_save_to_buffer (pixbuf, &buffer, &size, "png", &error, NULL))
-    {
-        if (error != NULL)
-            g_error_free (error);
-        return gtk_image_new ();
-    }
-
-    bytes = g_bytes_new_take (buffer, size);
-    texture = gdk_texture_new_from_bytes (bytes, &error);
-    g_bytes_unref (bytes);
-    if (texture == NULL)
-    {
-        if (error != NULL)
-            g_error_free (error);
-        return gtk_image_new ();
-    }
-
-    image = gtk_image_new_from_paintable (GDK_PAINTABLE (texture));
-    g_object_unref (texture);
-    return image;
 }

@@ -43,8 +43,9 @@ gint tbo_alert_choose (GtkWindow *parent,
                        gint cancel_button,
                        gint default_button);
 void tbo_alert_show (GtkWindow *parent, const gchar *message, const gchar *detail);
+void tbo_alert_set_test_response (gint response);
+void tbo_alert_clear_test_response (void);
 void tbo_widget_show_all (GtkWidget *widget);
 GtkWidget *tbo_picture_new_for_pixbuf (GdkPixbuf *pixbuf);
-GtkWidget *tbo_image_new_for_pixbuf (GdkPixbuf *pixbuf);
 
 #endif

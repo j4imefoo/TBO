@@ -102,10 +102,12 @@ open_cb (GtkApplication *app, GFile **files, gint n_files, const gchar *hint, gp
         tbo = tbo_new_tbo (app, 800, 450);
         if (path != NULL)
         {
-            tbo_comic_open (tbo, path);
-            tbo_window_set_path (tbo, path);
-            tbo_window_add_recent_project (path);
-            tbo_menu_refresh (tbo);
+            if (tbo_comic_open (tbo, path))
+            {
+                tbo_window_set_path (tbo, path);
+                tbo_window_add_recent_project (path);
+                tbo_menu_refresh (tbo);
+            }
             g_free (path);
         }
         present_window (tbo);

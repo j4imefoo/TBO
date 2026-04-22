@@ -59,6 +59,30 @@ typedef struct
     GString *current_text_buffer;
 } TboLoadContext;
 
+static gchar *
+unwrap_saved_text (const gchar *text)
+{
+    gsize start = 0;
+    gsize end;
+    gsize trailing;
+
+    if (text == NULL)
+        return g_strdup ("");
+
+    end = strlen (text);
+    if (end > 0 && text[0] == '\n')
+        start = 1;
+
+    trailing = end;
+    while (trailing > start && (text[trailing - 1] == ' ' || text[trailing - 1] == '\t'))
+        trailing--;
+
+    if (trailing > start && text[trailing - 1] == '\n')
+        end = trailing - 1;
+
+    return g_strndup (text + start, end - start);
+}
+
 static const gchar *
 find_attr_value (const gchar **attribute_names,
                  const gchar **attribute_values,
@@ -341,6 +365,15 @@ create_tbo_piximage (TboLoadContext *context,
     if (!parse_attrs ("piximage", attrs, G_N_ELEMENTS (attrs), attribute_names, attribute_values, error))
         return FALSE;
 
+    if (width < 0 || height < 0)
+    {
+        g_set_error (error,
+                     G_MARKUP_ERROR,
+                     G_MARKUP_ERROR_INVALID_CONTENT,
+                     "piximage size cannot be negative");
+        return FALSE;
+    }
+
     path = dup_required_attr_string (attribute_names, attribute_values, "piximage", "path", error);
     if (path == NULL)
         return FALSE;
@@ -392,6 +425,15 @@ create_tbo_svgimage (TboLoadContext *context,
 
     if (!parse_attrs ("svgimage", attrs, G_N_ELEMENTS (attrs), attribute_names, attribute_values, error))
         return FALSE;
+
+    if (width < 0 || height < 0)
+    {
+        g_set_error (error,
+                     G_MARKUP_ERROR,
+                     G_MARKUP_ERROR_INVALID_CONTENT,
+                     "svgimage size cannot be negative");
+        return FALSE;
+    }
 
     path = dup_required_attr_string (attribute_names, attribute_values, "svgimage", "path", error);
     if (path == NULL)
@@ -451,6 +493,15 @@ create_tbo_text (TboLoadContext *context,
 
     if (!parse_attrs ("text", attrs, G_N_ELEMENTS (attrs), attribute_names, attribute_values, error))
         return FALSE;
+
+    if (width < 0 || height < 0)
+    {
+        g_set_error (error,
+                     G_MARKUP_ERROR,
+                     G_MARKUP_ERROR_INVALID_CONTENT,
+                     "text size cannot be negative");
+        return FALSE;
+    }
 
     font = dup_required_attr_string (attribute_names, attribute_values, "text", "font", error);
     if (font == NULL)
@@ -544,16 +595,8 @@ end_element (GMarkupParseContext *markup_context,
 
         if (context->current_text != NULL && context->current_text_buffer != NULL)
         {
-            normalized = g_strdup (context->current_text_buffer->str);
-            g_strstrip (normalized);
-            if (*normalized != '\0')
-            {
-                tbo_object_text_set_text (context->current_text, normalized);
-            }
-            else if (context->current_frame != NULL)
-            {
-                tbo_frame_del_obj (context->current_frame, TBO_OBJECT_BASE (context->current_text));
-            }
+            normalized = unwrap_saved_text (context->current_text_buffer->str);
+            tbo_object_text_set_text (context->current_text, normalized);
         }
 
         g_free (normalized);
@@ -623,6 +666,19 @@ tbo_comic_load_with_alerts (const gchar *filename, gboolean show_alerts)
     {
         if (show_alerts)
             tbo_alert_show (NULL, _("Couldn't parse file"), _("No comic data found in file"));
+        g_markup_parse_context_free (markup_context);
+        g_free (file_text);
+        g_free (context.title);
+        return NULL;
+    }
+
+    if (tbo_comic_len (context.comic) == 0)
+    {
+        if (show_alerts)
+            tbo_alert_show (NULL, _("Couldn't parse file"), _("No pages found in file"));
+        tbo_comic_free (context.comic);
+        if (context.current_text_buffer != NULL)
+            g_string_free (context.current_text_buffer, TRUE);
         g_markup_parse_context_free (markup_context);
         g_free (file_text);
         g_free (context.title);

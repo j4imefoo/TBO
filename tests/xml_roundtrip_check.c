@@ -14,11 +14,13 @@
 static gchar *
 build_long_text (void)
 {
-    GString *text = g_string_new ("Header <&> \"quoted\"\n");
+    GString *text = g_string_new ("\n  Header <&> \"quoted\"\n");
     gint i;
 
     for (i = 0; i < 300; i++)
         g_string_append_printf (text, "Line %d <tag>&\"value\"\n", i);
+
+    g_string_append (text, "Tail with spaces   \n");
 
     return g_string_free (text, FALSE);
 }
@@ -53,7 +55,6 @@ main (void)
     frame = tbo_page_new_frame (page, 0, 0, 300, 200);
     long_text = build_long_text ();
     expected_text = g_strdup (long_text);
-    g_strstrip (expected_text);
 
     text = TBO_OBJECT_TEXT (tbo_object_text_new_with_params (10, 10, 200, 100, long_text, "Sans 12", &color));
     svg = TBO_OBJECT_SVG (tbo_object_svg_new_with_params (5, 5, 20, 20, "assets/& weird \"quote\" <svg>.svg"));

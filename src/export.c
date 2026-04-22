@@ -163,7 +163,12 @@ build_export_page_range (Comic *comic, gint from_page, gint to_page, gint *n_pag
 
     normalize_export_page_range (comic, &from_page, &to_page);
     for (i = from_page - 1; i <= to_page - 1; i++)
-        pages = g_list_append (pages, g_list_nth_data (tbo_comic_get_pages (comic), i));
+    {
+        Page *page = g_list_nth_data (tbo_comic_get_pages (comic), i);
+
+        if (page != NULL)
+            pages = g_list_append (pages, page);
+    }
 
     if (n_pages != NULL)
         *n_pages = g_list_length (pages);
@@ -604,14 +609,29 @@ export_page_list (TboWindow *tbo,
     gint count = n_pages;
     gint index = 0;
 
+    if (pages == NULL || n_pages <= 0)
+    {
+        show_export_error (tbo, _("There are no pages to export."));
+        return FALSE;
+    }
+
     for (; count; count /= 10, digits++);
     format_pages = g_strdup_printf ("%%s%%0%dd.%%s", MAX (1, digits));
 
     for (; pages != NULL; pages = pages->next, index++)
     {
+        Page *page = TBO_PAGE (pages->data);
         gchar *path = g_strdup_printf (format_pages, base_filename, index, export_to);
         gdouble draw_width;
         gdouble draw_height;
+
+        if (page == NULL)
+        {
+            show_export_error (tbo, _("There are no pages to export."));
+            g_free (path);
+            success = FALSE;
+            break;
+        }
 
         if (n_pages == 1 || g_strcmp0 (export_to, "pdf") == 0)
         {
@@ -672,7 +692,7 @@ export_page_list (TboWindow *tbo,
             }
         }
 
-        tbo_drawing_draw_page (TBO_DRAWING (tbo->drawing), cr, TBO_PAGE (pages->data), draw_width, draw_height);
+        tbo_drawing_draw_page (TBO_DRAWING (tbo->drawing), cr, page, draw_width, draw_height);
         success = finish_export_surface (tbo, export_to, path, surface, cr);
         g_free (path);
 
@@ -791,10 +811,22 @@ tbo_export_file_with_scope_range (TboWindow *tbo,
     switch (scope)
     {
         case TBO_EXPORT_SCOPE_CURRENT_PAGE:
-            pages = g_list_append (NULL, tbo_comic_get_current_page (tbo->comic));
-            success = export_page_list (tbo, base_filename, export_to, width, height, pages, 1, TRUE);
-            g_list_free (pages);
+        {
+            Page *current_page = tbo_comic_get_current_page (tbo->comic);
+
+            if (current_page == NULL)
+            {
+                show_export_error (tbo, _("There are no pages to export."));
+                success = FALSE;
+            }
+            else
+            {
+                pages = g_list_append (NULL, current_page);
+                success = export_page_list (tbo, base_filename, export_to, width, height, pages, 1, TRUE);
+                g_list_free (pages);
+            }
             break;
+        }
         case TBO_EXPORT_SCOPE_SELECTION:
         {
             Frame *frame = get_export_selection_frame (tbo);

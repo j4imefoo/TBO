@@ -738,27 +738,12 @@ text_state_free (TboAction *action)
 }
 
 void
-tbo_action_set (TboAction *action,
-                gpointer action_do,
-                gpointer action_undo)
-{
-    action->action_do = action_do;
-    action->action_undo = action_undo;
-}
-
-void
 tbo_action_del (TboAction *action)
 {
     if (action->action_free != NULL)
         action->action_free (action);
 
     free (action);
-}
-
-void
-tbo_action_del_data (TboAction *action, gpointer user_data)
-{
-    tbo_action_del (action);
 }
 
 TboUndoStack *
@@ -768,16 +753,24 @@ tbo_undo_stack_new (void)
     stack->first = NULL;
     stack->list = NULL;
     stack->last_flag = TRUE;
+    stack->current_state_id = 0;
+    stack->next_state_id = 1;
     return stack;
 }
 
 void
 tbo_undo_stack_insert (TboUndoStack *stack, TboAction *action)
 {
+    action->state_before = stack->current_state_id;
+    action->state_after = stack->next_state_id++;
+
     // Removing each element before the actual one
     if (stack->first)
     {
-        while (stack->first != stack->list)
+        if (stack->last_flag)
+            tbo_undo_stack_clear (stack);
+
+        while (stack->first != NULL && stack->first != stack->list)
         {
             GList *link = stack->first;
 
@@ -792,6 +785,7 @@ tbo_undo_stack_insert (TboUndoStack *stack, TboAction *action)
     stack->last_flag = FALSE;
     stack->list = g_list_prepend (stack->list, (gpointer)action);
     stack->first = stack->list;
+    stack->current_state_id = action->state_after;
 }
 
 void
@@ -814,6 +808,7 @@ tbo_undo_stack_clear (TboUndoStack *stack)
     stack->first = NULL;
     stack->list = NULL;
     stack->last_flag = TRUE;
+    stack->next_state_id = stack->current_state_id + 1;
 }
 
 void
@@ -829,6 +824,7 @@ tbo_undo_stack_undo (TboUndoStack *stack)
     TboAction *action = NULL;
     action = (stack->list)->data;
     tbo_action_undo (action);
+    stack->current_state_id = action->state_before;
 
     if (stack->list->next)
         stack->list = (stack->list)->next;
@@ -854,6 +850,7 @@ tbo_undo_stack_redo (TboUndoStack *stack)
     TboAction *action = NULL;
     action = (stack->list)->data;
     tbo_action_do (action);
+    stack->current_state_id = action->state_after;
 }
 
 void

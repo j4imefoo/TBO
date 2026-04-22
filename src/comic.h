@@ -69,6 +69,6 @@ void tbo_comic_set_current_page_nth (Comic *comic, int nth);
 void tbo_comic_reorder_page (Comic *comic, Page *page, int nth);
 gboolean tbo_comic_save (TboWindow *tbo, const gchar *filename);
 gboolean tbo_comic_save_snapshot (TboWindow *tbo, const gchar *filename);
-void tbo_comic_open (TboWindow *window, const gchar *filename);
+gboolean tbo_comic_open (TboWindow *window, const gchar *filename);
 
 #endif

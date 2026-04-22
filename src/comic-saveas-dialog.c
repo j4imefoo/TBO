@@ -36,16 +36,27 @@ tbo_comic_save_dialog (GtkWidget *widget, TboWindow *window)
         return tbo_comic_saveas_dialog (widget, window);
 }
 
+gchar *
+tbo_comic_build_save_filename (const gchar *title)
+{
+    if (title == NULL)
+        return g_strdup ("untitled.tbo");
+
+    if (g_str_has_suffix (title, ".tbo"))
+        return g_strdup (title);
+
+    return g_strconcat (title, ".tbo", NULL);
+}
+
 gboolean
 tbo_comic_saveas_dialog (GtkWidget *widget, TboWindow *window)
 {
     gchar *filename;
-    char buffer[260];
+    gchar *suggested_name;
 
-    g_strlcpy (buffer, tbo_comic_get_title (window->comic), sizeof (buffer));
-    if (!g_str_has_suffix (tbo_comic_get_title (window->comic), ".tbo"))
-        strcat (buffer, ".tbo");
-    filename = tbo_file_dialog_save_project (window, buffer);
+    suggested_name = tbo_comic_build_save_filename (tbo_comic_get_title (window->comic));
+    filename = tbo_file_dialog_save_project (window, suggested_name);
+    g_free (suggested_name);
 
     if (filename != NULL)
     {

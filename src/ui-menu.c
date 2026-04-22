@@ -508,7 +508,12 @@ open_tutorial (TboWindow *tbo)
 {
     gchar *filename = tbo_get_data_path ("tut.tbo");
 
-    tbo_comic_open (tbo, filename);
+    if (tbo_window_prepare_for_document_replace (tbo) && tbo_comic_open (tbo, filename))
+    {
+        g_free (tbo->path);
+        tbo->path = NULL;
+    }
+
     g_free (filename);
 }
 

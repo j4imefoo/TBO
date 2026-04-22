@@ -22,7 +22,6 @@
 
 #include <glib.h>
 #include "tbo-object-base.h"
-#include "tbo-object-group.h"
 
 #define TBO_TYPE_OBJECT_GROUP            (tbo_object_group_get_type ())
 #define TBO_OBJECT_GROUP(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), TBO_TYPE_OBJECT_GROUP, TboObjectGroup))

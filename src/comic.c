@@ -341,8 +341,11 @@ save_comic_to_file (TboWindow *tbo,
 {
     GList *p;
     char buffer[255];
+    char title[255] = {0};
     FILE *file = fopen (filename, "w");
     Comic *comic = tbo->comic;
+    gboolean success;
+    gint saved_errno = 0;
 
     if (!file)
     {
@@ -357,10 +360,7 @@ save_comic_to_file (TboWindow *tbo,
     }
 
     if (update_window_state)
-    {
-        get_base_name (filename, comic->title, 255);
-        gtk_window_set_title (GTK_WINDOW (tbo->window), comic->title);
-    }
+        get_base_name (filename, title, sizeof (title));
 
     if (comic->paper == TBO_COMIC_PAPER_A4)
         snprintf (buffer, 255, "<tbo width=\"%d\" height=\"%d\" paper=\"a4\">\n",
@@ -379,7 +379,31 @@ save_comic_to_file (TboWindow *tbo,
 
     snprintf (buffer, 255, "</tbo>\n");
     fwrite (buffer, sizeof (char), strlen (buffer), file);
-    fclose (file);
+
+    success = ferror (file) == 0;
+    if (fclose (file) != 0)
+        success = FALSE;
+
+    if (!success)
+    {
+        saved_errno = errno != 0 ? errno : EIO;
+
+        if (show_errors)
+        {
+            perror (_("failed saving"));
+            tbo_alert_show (GTK_WINDOW (tbo->window),
+                            _("Failed saving"),
+                            strerror (saved_errno));
+        }
+
+        return FALSE;
+    }
+
+    if (update_window_state)
+    {
+        g_strlcpy (comic->title, title, sizeof (comic->title));
+        gtk_window_set_title (GTK_WINDOW (tbo->window), comic->title);
+    }
 
     if (mark_clean)
         tbo_window_mark_clean (tbo);
@@ -399,7 +423,7 @@ tbo_comic_save_snapshot (TboWindow *tbo, const gchar *filename)
     return save_comic_to_file (tbo, filename, FALSE, FALSE, FALSE);
 }
 
-void
+gboolean
 tbo_comic_open (TboWindow *window, const gchar *filename)
 {
     Comic *newcomic = tbo_comic_load (filename);
@@ -407,33 +431,34 @@ tbo_comic_open (TboWindow *window, const gchar *filename)
     int nth;
     int n_pages;
 
-    if (newcomic)
+    if (newcomic == NULL)
+        return FALSE;
+
+    tbo_window_reset_document_state (window);
+    oldcomic = window->comic;
+
+    n_pages = tbo_window_get_page_count (window);
+    for (nth = n_pages - 1; nth >= 0; nth--)
     {
-        tbo_window_reset_document_state (window);
-        oldcomic = window->comic;
-
-        n_pages = tbo_window_get_page_count (window);
-        for (nth = n_pages - 1; nth >= 0; nth--)
-        {
-            tbo_window_remove_page_widget (window, nth);
-        }
-
-        window->comic = newcomic;
-        gtk_window_set_title (GTK_WINDOW (window->window), tbo_comic_get_title (window->comic));
-        tbo_comic_free (oldcomic);
-
-        for (nth = 0; nth < tbo_comic_len (window->comic); nth++)
-        {
-            tbo_window_add_page_widget (window,
-                                        create_darea (window),
-                                        g_list_nth_data (tbo_comic_get_pages (window->comic), nth));
-        }
-
-        tbo_window_set_path (window, filename);
-        tbo_window_set_current_tab_page (window, TRUE);
-        tbo_drawing_adjust_scroll (TBO_DRAWING (window->drawing));
-        tbo_drawing_update (TBO_DRAWING (window->drawing));
-        tbo_window_refresh_status (window);
-        tbo_window_mark_clean (window);
+        tbo_window_remove_page_widget (window, nth);
     }
+
+    window->comic = newcomic;
+    gtk_window_set_title (GTK_WINDOW (window->window), tbo_comic_get_title (window->comic));
+    tbo_comic_free (oldcomic);
+
+    for (nth = 0; nth < tbo_comic_len (window->comic); nth++)
+    {
+        tbo_window_add_page_widget (window,
+                                    create_darea (window),
+                                    g_list_nth_data (tbo_comic_get_pages (window->comic), nth));
+    }
+
+    tbo_window_set_path (window, filename);
+    tbo_window_set_current_tab_page (window, TRUE);
+    tbo_drawing_adjust_scroll (TBO_DRAWING (window->drawing));
+    tbo_drawing_update (TBO_DRAWING (window->drawing));
+    tbo_window_refresh_status (window);
+    tbo_window_mark_clean (window);
+    return TRUE;
 }

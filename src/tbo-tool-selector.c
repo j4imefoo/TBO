@@ -595,9 +595,11 @@ delete_selected (TboToolSelector *self)
     if (obj != NULL && tbo_drawing_get_current_frame (drawing) != NULL)
     {
         gint index = tbo_frame_object_nth (frame, obj);
+        TboAction *action = tbo_action_object_remove_new (frame, obj, index);
+
         tbo_tool_selector_set_selected_object_pointer (self, NULL);
         tbo_frame_del_obj (frame, obj);
-        tbo_undo_stack_insert (tbo->undo_stack, tbo_action_object_remove_new (frame, obj, index));
+        tbo_undo_stack_insert (tbo->undo_stack, action);
         tbo_window_mark_dirty (tbo);
         tbo_toolbar_update (tbo->toolbar);
         update_menubar (tbo);
@@ -607,8 +609,10 @@ delete_selected (TboToolSelector *self)
     if (frame != NULL && tbo_drawing_get_current_frame (drawing) == NULL)
     {
         gint index = tbo_page_frame_nth (page, frame);
+        TboAction *action = tbo_action_frame_remove_new (page, frame, index);
+
         tbo_page_del_frame (page, frame);
-        tbo_undo_stack_insert (tbo->undo_stack, tbo_action_frame_remove_new (page, frame, index));
+        tbo_undo_stack_insert (tbo->undo_stack, action);
         tbo_tool_selector_set_selected (self, NULL);
         tbo_window_mark_dirty (tbo);
         tbo_window_refresh_status (tbo);

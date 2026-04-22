@@ -511,6 +511,94 @@ text_undo_check = executable(
   install: false
 )
 
+saveas_filename_check = executable(
+  'saveas-filename-check',
+  common_sources + files('tests/saveas_filename_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+object_delete_undo_check = executable(
+  'object-delete-undo-check',
+  common_sources + files('tests/object_delete_undo_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+frame_delete_undo_check = executable(
+  'frame-delete-undo-check',
+  common_sources + files('tests/frame_delete_undo_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+undo_branch_reset_check = executable(
+  'undo-branch-reset-check',
+  common_sources + files('tests/undo_branch_reset_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+document_replace_failure_check = executable(
+  'document-replace-failure-check',
+  common_sources + files('tests/document_replace_failure_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+tutorial_open_check = executable(
+  'tutorial-open-check',
+  common_sources + files('tests/tutorial_open_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+export_empty_comic_check = executable(
+  'export-empty-comic-check',
+  common_sources + files('tests/export_empty_comic_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+save_failure_check = executable(
+  'save-failure-check',
+  common_sources + files('tests/save_failure_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+undo_saved_state_check = executable(
+  'undo-saved-state-check',
+  common_sources + files('tests/undo_saved_state_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+recent_missing_file_check = executable(
+  'recent-missing-file-check',
+  common_sources + files('tests/recent_missing_file_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
+recover_file_failure_check = executable(
+  'recover-file-failure-check',
+  common_sources + files('tests/recover_file_failure_check.c'),
+  dependencies: deps,
+  include_directories: inc,
+  install: false
+)
+
 test(
   'load-render-check',
   load_render_check,
@@ -841,6 +929,72 @@ test(
 test(
   'text-undo-check',
   text_undo_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'saveas-filename-check',
+  saveas_filename_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'object-delete-undo-check',
+  object_delete_undo_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'frame-delete-undo-check',
+  frame_delete_undo_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'undo-branch-reset-check',
+  undo_branch_reset_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'document-replace-failure-check',
+  document_replace_failure_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'tutorial-open-check',
+  tutorial_open_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'export-empty-comic-check',
+  export_empty_comic_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'save-failure-check',
+  save_failure_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'undo-saved-state-check',
+  undo_saved_state_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'recent-missing-file-check',
+  recent_missing_file_check,
+  env: ['G_DEBUG=fatal-criticals']
+)
+
+test(
+  'recover-file-failure-check',
+  recover_file_failure_check,
   env: ['G_DEBUG=fatal-criticals']
 )
 

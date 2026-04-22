@@ -45,6 +45,10 @@ main (int argc, char **argv)
         "<tbo width=\"800\" height=\"450\"><frame x=\"0\" y=\"0\" width=\"100\" height=\"100\"/></tbo>",
         "<tbo width=\"800\" height=\"450\"><page><text x=\"1\" y=\"2\" width=\"10\" height=\"10\" font=\"Sans 12\">broken</text></page></tbo>",
         "<tbo width=\"800\" height=\"450\"></tbo><tbo width=\"1\" height=\"1\"></tbo>",
+        "<tbo width=\"800\" height=\"450\"></tbo>",
+        "<tbo width=\"800\" height=\"450\"><page><frame x=\"0\" y=\"0\" width=\"100\" height=\"100\"><svgimage x=\"0\" y=\"0\" width=\"-1\" height=\"10\" path=\"foo.svg\"></svgimage></frame></page></tbo>",
+        "<tbo width=\"800\" height=\"450\"><page><frame x=\"0\" y=\"0\" width=\"100\" height=\"100\"><piximage x=\"0\" y=\"0\" width=\"10\" height=\"-1\" path=\"foo.png\"></piximage></frame></page></tbo>",
+        "<tbo width=\"800\" height=\"450\"><page><frame x=\"0\" y=\"0\" width=\"100\" height=\"100\"><text x=\"0\" y=\"0\" width=\"-1\" height=\"0\" font=\"Sans 12\">text</text></frame></page></tbo>",
     };
     guint i;
     Comic *comic;

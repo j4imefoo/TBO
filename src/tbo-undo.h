@@ -40,15 +40,18 @@ struct _TboAction {
     void (*action_do) (TboAction *action);
     void (*action_undo) (TboAction *action);
     void (*action_free) (TboAction *action);
+    guint64 state_before;
+    guint64 state_after;
 };
 
-void tbo_action_set (TboAction *action, gpointer action_do, gpointer action_undo);
 void tbo_action_del (TboAction *action);
 
 struct _TboUndoStack {
     GList *first;
     GList *list;
     gboolean last_flag;
+    guint64 current_state_id;
+    guint64 next_state_id;
 };
 
 TboUndoStack * tbo_undo_stack_new (void);

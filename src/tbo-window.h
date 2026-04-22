@@ -64,11 +64,11 @@ struct _TboWindow
     gboolean key_binder;
     gboolean dirty;
     gboolean destroying;
+    guint64 clean_state_id;
 };
 
 TboWindow *tbo_window_new (GtkWidget *window, GtkWidget *dw_scroll, GtkWidget *scroll2, GtkWidget *notebook, GtkWidget *toolarea, GtkWidget *status, GtkWidget *vbox, Comic *comic);
 void tbo_window_free (TboWindow *tbo);
-gboolean tbo_window_free_cb (GtkWidget *widget, GdkEvent *event, TboWindow *tbo);
 gboolean tbo_window_close_request_cb (GtkWindow *window, TboWindow *tbo);
 TboWindow * tbo_new_tbo (GtkApplication *app, int width, int height);
 TboWindow * tbo_new_tbo_with_template (GtkApplication *app, int width, int height, TboComicTemplate template);

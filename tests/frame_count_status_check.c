@@ -15,6 +15,8 @@ main (void)
     TboPointerEvent release_event = { .x = 110, .y = 90 };
     const gchar *status;
 
+    g_setenv ("LC_ALL", "C.UTF-8", TRUE);
+    g_setenv ("LANGUAGE", "C", TRUE);
     gtk_init ();
 
     app = gtk_application_new ("net.danigm.tbo.framecountstatus", G_APPLICATION_DEFAULT_FLAGS);
