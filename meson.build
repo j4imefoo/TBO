@@ -11,7 +11,7 @@ endif
 
 cc = meson.get_compiler('c')
 
-gtk_dep = dependency('gtk4', version: '>= 4.0')
+gtk_dep = dependency('gtk4', version: '>= 4.8')
 cairo_dep = dependency('cairo')
 rsvg_dep = dependency('librsvg-2.0')
 math_dep = cc.find_library('m', required: false)

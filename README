@@ -11,7 +11,7 @@ Base requirements:
  * meson
  * ninja
  * pkg-config
- * gtk4 (4.0 or newer)
+ * gtk4 (4.8 or newer)
  * cairo
  * librsvg-2.0
 
