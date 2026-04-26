@@ -21,6 +21,7 @@ struct alert_run_data {
 static gint alert_test_response = TBO_ALERT_TEST_RESPONSE_NONE;
 
 static void
+#if GTK_CHECK_VERSION(4, 10, 0)
 alert_response_cb (GObject *source, GAsyncResult *result, gpointer user_data)
 {
     GtkAlertDialog *dialog = GTK_ALERT_DIALOG (source);
@@ -35,6 +36,12 @@ alert_response_cb (GObject *source, GAsyncResult *result, gpointer user_data)
     }
     g_main_loop_quit (data->loop);
 }
+#else
+alert_response_cb (GtkButton *button, GtkWindow *dialog)
+{
+    tbo_dialog_button_cb (button, dialog);
+}
+#endif
 
 GtkWidget *
 tbo_widget_get_first_child (GtkWidget *widget)
@@ -210,6 +217,7 @@ tbo_alert_choose (GtkWindow *parent,
                   gint cancel_button,
                   gint default_button)
 {
+#if GTK_CHECK_VERSION(4, 10, 0)
     GtkAlertDialog *dialog;
     struct alert_run_data data;
 
@@ -230,6 +238,76 @@ tbo_alert_choose (GtkWindow *parent,
     g_object_unref (dialog);
 
     return data.response;
+#else
+    GtkWidget *dialog;
+    GtkWidget *headerbar;
+    GtkWidget *content;
+    GtkWidget *label;
+    GtkWidget *actions;
+    TboDialogRunData data;
+    gint response;
+
+    if (alert_test_response != TBO_ALERT_TEST_RESPONSE_NONE)
+        return alert_test_response;
+
+    dialog = gtk_window_new ();
+    gtk_window_set_title (GTK_WINDOW (dialog), message);
+    if (parent != NULL)
+        gtk_window_set_transient_for (GTK_WINDOW (dialog), parent);
+    gtk_window_set_modal (GTK_WINDOW (dialog), TRUE);
+    gtk_window_set_resizable (GTK_WINDOW (dialog), FALSE);
+
+    headerbar = gtk_header_bar_new ();
+    gtk_header_bar_set_show_title_buttons (GTK_HEADER_BAR (headerbar), TRUE);
+    gtk_window_set_titlebar (GTK_WINDOW (dialog), headerbar);
+
+    content = gtk_box_new (GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_add_css_class (content, "tbo-dialog-content");
+    gtk_widget_set_margin_start (content, 12);
+    gtk_widget_set_margin_end (content, 12);
+    gtk_widget_set_margin_top (content, 12);
+    gtk_widget_set_margin_bottom (content, 12);
+    tbo_widget_add_child (dialog, content);
+
+    label = gtk_label_new (message);
+    gtk_label_set_wrap (GTK_LABEL (label), TRUE);
+    gtk_label_set_xalign (GTK_LABEL (label), 0.0);
+    gtk_label_set_yalign (GTK_LABEL (label), 0.5);
+    tbo_widget_add_child (content, label);
+
+    if (detail != NULL && *detail != '\0')
+    {
+        label = gtk_label_new (detail);
+        gtk_widget_add_css_class (label, "dim-label");
+        gtk_label_set_wrap (GTK_LABEL (label), TRUE);
+        gtk_label_set_xalign (GTK_LABEL (label), 0.0);
+        gtk_label_set_yalign (GTK_LABEL (label), 0.5);
+        tbo_widget_add_child (content, label);
+    }
+
+    actions = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_halign (actions, GTK_ALIGN_END);
+    tbo_widget_add_child (content, actions);
+
+    for (gint i = 0; buttons[i] != NULL; i++)
+    {
+        GtkWidget *button = gtk_button_new_with_label (buttons[i]);
+
+        if (i == default_button)
+            gtk_widget_add_css_class (button, "suggested-action");
+        g_object_set_data (G_OBJECT (button), "tbo-response", GINT_TO_POINTER (i));
+        g_signal_connect (button, "clicked", G_CALLBACK (alert_response_cb), dialog);
+        tbo_widget_add_child (actions, button);
+    }
+
+    tbo_dialog_run_data_init (&data, cancel_button);
+    g_signal_connect (dialog, "close-request", G_CALLBACK (tbo_dialog_close_request_cb), &data);
+    response = tbo_dialog_run (GTK_WINDOW (dialog), &data);
+    gtk_window_destroy (GTK_WINDOW (dialog));
+    tbo_dialog_run_data_clear (&data);
+
+    return response;
+#endif
 }
 
 void

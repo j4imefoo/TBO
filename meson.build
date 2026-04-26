@@ -5,11 +5,13 @@ project(
   default_options: ['c_std=gnu11']
 )
 
-subdir('po')
+if get_option('nls')
+  subdir('po')
+endif
 
 cc = meson.get_compiler('c')
 
-gtk_dep = dependency('gtk4', version: '>= 4.22')
+gtk_dep = dependency('gtk4', version: '>= 4.0')
 cairo_dep = dependency('cairo')
 rsvg_dep = dependency('librsvg-2.0')
 math_dep = cc.find_library('m', required: false)
@@ -22,7 +24,7 @@ locale_dir = join_paths(get_option('prefix'), get_option('localedir'))
 conf = configuration_data()
 conf.set_quoted('GETTEXT_PACKAGE', 'tbo')
 conf.set_quoted('VERSION', meson.project_version())
-conf.set10('ENABLE_NLS', true)
+conf.set10('ENABLE_NLS', get_option('nls'))
 configure_file(output: 'config.h', configuration: conf)
 configured_icon_png = configure_file(input: 'data/icon.png', output: 'tbo.png', copy: true)
 
@@ -79,6 +81,7 @@ executable(
   install: true
 )
 
+if get_option('tests')
 load_render_check = executable(
   'load-render-check',
   common_sources + files('tests/load_render_check.c'),
@@ -1025,11 +1028,16 @@ test(
   recover_file_failure_check,
   env: ['G_DEBUG=fatal-criticals']
 )
+endif
+
+installable_data_files = ['data/tut.tbo', 'data/icon.png']
+
+if get_option('tutorial_pdf')
+  installable_data_files += 'data/tutorial.pdf'
+endif
 
 install_data(
-  'data/tutorial.pdf',
-  'data/tut.tbo',
-  'data/icon.png',
+  installable_data_files,
   install_dir: join_paths(get_option('datadir'), 'tbo')
 )
 
@@ -1038,7 +1046,14 @@ install_subdir('data/icons', install_dir: join_paths(get_option('datadir'), 'tbo
 install_subdir('data/doodle', install_dir: join_paths(get_option('datadir'), 'tbo'))
 
 install_data('data/applications/net.danigm.tbo.desktop', install_dir: join_paths(get_option('datadir'), 'applications'))
-install_data('data/metainfo/net.danigm.tbo.metainfo.xml', install_dir: join_paths(get_option('datadir'), 'metainfo'))
-install_data('data/tbo.svg', install_dir: join_paths(get_option('datadir'), 'pixmaps'))
+
+if get_option('appstream')
+  install_data('data/metainfo/net.danigm.tbo.metainfo.xml', install_dir: join_paths(get_option('datadir'), 'metainfo'))
+endif
+
+if get_option('legacy_pixmap_icon')
+  install_data('data/tbo.svg', install_dir: join_paths(get_option('datadir'), 'pixmaps'))
+endif
+
 install_data('data/tbo.svg', install_dir: join_paths(get_option('datadir'), 'icons', 'hicolor', 'scalable', 'apps'))
 install_data(configured_icon_png, install_dir: join_paths(get_option('datadir'), 'icons', 'hicolor', '128x128', 'apps'))

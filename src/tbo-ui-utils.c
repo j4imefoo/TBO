@@ -41,3 +41,97 @@ add_spin_with_label (GtkWidget *container, const gchar *string, gint value)
 
         return spin;
 }
+
+GtkWidget *
+tbo_font_picker_new (void)
+{
+#if GTK_CHECK_VERSION(4, 10, 0)
+        GtkFontDialog *dialog = gtk_font_dialog_new ();
+        GtkWidget *picker = gtk_font_dialog_button_new (dialog);
+
+        gtk_font_dialog_button_set_use_size (GTK_FONT_DIALOG_BUTTON (picker), FALSE);
+#else
+        GtkWidget *picker = gtk_font_button_new ();
+
+        gtk_font_button_set_use_size (GTK_FONT_BUTTON (picker), FALSE);
+#endif
+
+        return picker;
+}
+
+PangoFontDescription *
+tbo_font_picker_dup_font_desc (GtkWidget *picker)
+{
+#if GTK_CHECK_VERSION(4, 10, 0)
+        const PangoFontDescription *font = gtk_font_dialog_button_get_font_desc (GTK_FONT_DIALOG_BUTTON (picker));
+
+        if (font == NULL)
+                return NULL;
+
+        return pango_font_description_copy (font);
+#else
+        return gtk_font_chooser_get_font_desc (GTK_FONT_CHOOSER (picker));
+#endif
+}
+
+void
+tbo_font_picker_set_font_desc (GtkWidget *picker, const PangoFontDescription *description)
+{
+#if GTK_CHECK_VERSION(4, 10, 0)
+        gtk_font_dialog_button_set_font_desc (GTK_FONT_DIALOG_BUTTON (picker), description);
+#else
+        gtk_font_chooser_set_font_desc (GTK_FONT_CHOOSER (picker), description);
+#endif
+}
+
+GtkWidget *
+tbo_color_picker_new (const GdkRGBA *rgba)
+{
+#if GTK_CHECK_VERSION(4, 10, 0)
+        GtkColorDialog *dialog = gtk_color_dialog_new ();
+        GtkWidget *picker = gtk_color_dialog_button_new (dialog);
+
+#else
+        GtkWidget *picker = gtk_color_button_new ();
+#endif
+
+        tbo_color_picker_set_rgba (picker, rgba);
+        return picker;
+}
+
+GdkRGBA
+tbo_color_picker_get_rgba (GtkWidget *picker)
+{
+        GdkRGBA color = { 0, 0, 0, 1 };
+
+#if GTK_CHECK_VERSION(4, 10, 0)
+        const GdkRGBA *selected = gtk_color_dialog_button_get_rgba (GTK_COLOR_DIALOG_BUTTON (picker));
+
+        if (selected != NULL)
+                color = *selected;
+#else
+        gtk_color_chooser_get_rgba (GTK_COLOR_CHOOSER (picker), &color);
+#endif
+
+        return color;
+}
+
+void
+tbo_color_picker_set_rgba (GtkWidget *picker, const GdkRGBA *rgba)
+{
+#if GTK_CHECK_VERSION(4, 10, 0)
+        gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (picker), rgba);
+#else
+        gtk_color_chooser_set_rgba (GTK_COLOR_CHOOSER (picker), rgba);
+#endif
+}
+
+void
+tbo_picture_set_contain (GtkPicture *picture)
+{
+#if GTK_CHECK_VERSION(4, 8, 0)
+        gtk_picture_set_content_fit (picture, GTK_CONTENT_FIT_CONTAIN);
+#else
+        gtk_picture_set_keep_aspect_ratio (picture, TRUE);
+#endif
+}

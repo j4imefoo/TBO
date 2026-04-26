@@ -36,6 +36,7 @@
 #include "tbo-tool-doodle.h"
 #include "tbo-tool-bubble.h"
 #include "tbo-tool-text.h"
+#include "tbo-ui-utils.h"
 #include "ui-menu.h"
 #include "tbo-undo.h"
 #include "tbo-widget.h"
@@ -74,7 +75,7 @@ create_icon_from_file (const gchar *path)
 
     image = gtk_picture_new_for_filename (path);
     gtk_picture_set_can_shrink (GTK_PICTURE (image), TRUE);
-    gtk_picture_set_content_fit (GTK_PICTURE (image), GTK_CONTENT_FIT_CONTAIN);
+    tbo_picture_set_contain (GTK_PICTURE (image));
     gtk_widget_set_halign (image, GTK_ALIGN_CENTER);
     gtk_widget_set_valign (image, GTK_ALIGN_CENTER);
 

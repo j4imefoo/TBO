@@ -6,19 +6,35 @@ Building
 
 TBO now uses Meson as its build system and GTK4 as its UI toolkit.
 
-Required tools and libraries:
+Base requirements:
 
  * meson
  * ninja
  * pkg-config
- * gtk4
+ * gtk4 (4.0 or newer)
  * cairo
  * librsvg-2.0
- * gettext
 
-Build it from a fresh checkout with:
+Optional build extras:
+
+ * gettext (translations)
+ * xvfb and xauth (headless test runs)
+
+Build it from a fresh checkout with the default feature set:
 
     meson setup build
+    meson compile -C build
+
+For a lighter, more portable local build that skips translations and the test
+suite:
+
+    meson setup build -Dnls=false -Dtests=false
+    meson compile -C build
+
+For a minimal install that still keeps the bundled `tut.tbo` sample, but skips
+AppStream metadata, the legacy `pixmaps` icon, and the tutorial PDF:
+
+    meson setup build -Dnls=false -Dtests=false -Dappstream=false -Dlegacy_pixmap_icon=false -Dtutorial_pdf=false
     meson compile -C build
 
 Run the application with:
@@ -40,8 +56,13 @@ Run the smoke-test suite with:
 Translations
 ------------
 
-Translations are stored in `po/` and built automatically by Meson when gettext
-tools are available.
+Translations are stored in `po/` and can be disabled with `-Dnls=false`.
+
+Tests
+-----
+
+The smoke-test suite can be disabled with `-Dtests=false` when packaging for a
+minimal environment or when no headless GTK runner is available.
 
 Packaging
 ---------
@@ -51,8 +72,11 @@ The repository includes packaging metadata for:
  * Arch Linux: `archlinux/PKGBUILD`
  * Debian-based systems: `debian/`
 
-These files are intended to install the desktop file, icons and locale data in
-their standard system locations.
+These files are intended to install the desktop file and icons in their standard
+system locations.
+
+To keep packaging lighter, the bundled Arch and Debian recipes now configure
+Meson with `-Dnls=false -Dtests=false -Dappstream=false -Dlegacy_pixmap_icon=false -Dtutorial_pdf=false`.
 
 Using TBO
 ---------

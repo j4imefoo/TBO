@@ -21,6 +21,7 @@
 #include "tbo-window.h"
 #include "tbo-widget.h"
 #include "tbo-drawing.h"
+#include "tbo-ui-utils.h"
 #include "tbo-object-base.h"
 #include "tbo-tool-selector.h"
 #include "tbo-tool-text.h"
@@ -293,16 +294,16 @@ on_color_change (GtkWidget *widget, GParamSpec *pspec, TboToolText *self)
         gchar *old_text = g_strdup (tbo_object_text_get_text (self->text_selected));
         gchar *old_font = tbo_object_text_get_string (self->text_selected);
         GdkRGBA old_color = *self->text_selected->font_color;
-        const GdkRGBA *color = gtk_color_dialog_button_get_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color));
+        GdkRGBA color = tbo_color_picker_get_rgba (self->font_color);
 
-        if (gdk_rgba_equal (&old_color, color))
+        if (gdk_rgba_equal (&old_color, &color))
         {
             g_free (old_text);
             g_free (old_font);
             return;
         }
 
-        tbo_object_text_change_color (self->text_selected, (GdkRGBA *) color);
+        tbo_object_text_change_color (self->text_selected, &color);
         tbo_undo_stack_insert (tbo->undo_stack,
                                tbo_action_text_state_new (self->text_selected,
                                                           old_text,
@@ -310,7 +311,7 @@ on_color_change (GtkWidget *widget, GParamSpec *pspec, TboToolText *self)
                                                           &old_color,
                                                           old_text,
                                                           old_font,
-                                                          color));
+                                                          &color));
         g_free (old_text);
         g_free (old_font);
         tbo_window_mark_dirty (tbo);
@@ -330,8 +331,6 @@ setup_toolarea (TboToolText *self)
     GtkWidget *scroll;
     GtkWidget *view;
     GtkAdjustment *font_size_adjustment;
-    GtkFontDialog *font_dialog;
-    GtkColorDialog *color_dialog;
     GdkRGBA default_color = { 0, 0, 0, 1 };
 
     gtk_label_set_xalign (GTK_LABEL (font_label), 0.0);
@@ -341,9 +340,7 @@ setup_toolarea (TboToolText *self)
     gtk_label_set_xalign (GTK_LABEL (font_color_label), 0.0);
     gtk_label_set_yalign (GTK_LABEL (font_color_label), 0.5);
 
-    font_dialog = gtk_font_dialog_new ();
-    self->font = gtk_font_dialog_button_new (font_dialog);
-    gtk_font_dialog_button_set_use_size (GTK_FONT_DIALOG_BUTTON (self->font), FALSE);
+    self->font = tbo_font_picker_new ();
     g_signal_connect (self->font, "notify::font-desc", G_CALLBACK (on_font_change), self);
 
     font_size_adjustment = gtk_adjustment_new (27, 1, 300, 1, 5, 0);
@@ -352,10 +349,8 @@ setup_toolarea (TboToolText *self)
     gtk_spin_button_set_numeric (GTK_SPIN_BUTTON (self->font_size), TRUE);
     g_signal_connect (self->font_size, "value-changed", G_CALLBACK (on_font_size_change), self);
 
-    color_dialog = gtk_color_dialog_new ();
-    self->font_color = gtk_color_dialog_button_new (color_dialog);
+    self->font_color = tbo_color_picker_new (&default_color);
     g_signal_connect (self->font_color, "notify::rgba", G_CALLBACK (on_color_change), self);
-    gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color), &default_color);
 
     vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 5);
 
@@ -461,7 +456,7 @@ on_click (TboToolBase *tool, GtkWidget *widget, TboPointerEvent *event)
             return;
 
         gchar *font = tbo_tool_text_build_font (self);
-        color = *gtk_color_dialog_button_get_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color));
+        color = tbo_color_picker_get_rgba (self->font_color);
         text = TBO_OBJECT_TEXT (tbo_object_text_new_with_params (x, y, 100, 0,
                                                 _("Text"),
                                                 font,
@@ -580,8 +575,9 @@ tbo_tool_text_get_font_name (TboToolText *self)
 
     if (self->font)
     {
-        const PangoFontDescription *font = gtk_font_dialog_button_get_font_desc (GTK_FONT_DIALOG_BUTTON (self->font));
-        pango_font = pango_font_description_copy (font);
+        pango_font = tbo_font_picker_dup_font_desc (self->font);
+        if (pango_font == NULL)
+            return NULL;
         gchar *family = g_strdup (pango_font_description_get_family (pango_font));
         pango_font_description_free (pango_font);
         return family;
@@ -602,24 +598,19 @@ tbo_tool_text_get_font_size (TboToolText *self)
 static gchar *
 tbo_tool_text_build_font (TboToolText *self)
 {
-    gchar *font_string;
-    PangoFontDescription *description;
+    PangoFontDescription *description = NULL;
     gchar *result;
 
     if (self->font)
-    {
-        const PangoFontDescription *font = gtk_font_dialog_button_get_font_desc (GTK_FONT_DIALOG_BUTTON (self->font));
-        font_string = pango_font_description_to_string (font);
-    }
-    else
-        font_string = g_strdup (DEFAULT_PANGO_FONT);
+        description = tbo_font_picker_dup_font_desc (self->font);
 
-    description = pango_font_description_from_string (font_string);
+    if (description == NULL)
+        description = pango_font_description_from_string (DEFAULT_PANGO_FONT);
+
     pango_font_description_set_size (description, tbo_tool_text_get_font_size (self) * PANGO_SCALE);
     result = pango_font_description_to_string (description);
 
     pango_font_description_free (description);
-    g_free (font_string);
     return result;
 }
 
@@ -639,7 +630,7 @@ tbo_tool_text_sync_font_controls (TboToolText *self, const gchar *font_string)
     else
         size /= PANGO_SCALE;
 
-    gtk_font_dialog_button_set_font_desc (GTK_FONT_DIALOG_BUTTON (self->font), description);
+    tbo_font_picker_set_font_desc (self->font, description);
     gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->font_size), size);
 
     pango_font_description_free (description);
@@ -672,7 +663,7 @@ tbo_tool_text_set_selected (TboToolText *self, TboObjectText *text)
         if (self->font_color)
         {
             GdkRGBA default_color = { 0, 0, 0, 1 };
-            gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color), &default_color);
+            tbo_color_picker_set_rgba (self->font_color, &default_color);
         }
         self->syncing_controls = FALSE;
         return;
@@ -683,7 +674,7 @@ tbo_tool_text_set_selected (TboToolText *self, TboObjectText *text)
     gchar *font = tbo_object_text_get_string (text);
     tbo_tool_text_sync_font_controls (self, font);
     g_free (font);
-    gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->font_color), text->font_color);
+    tbo_color_picker_set_rgba (self->font_color, text->font_color);
     gtk_text_buffer_set_text (self->text_buffer, str, -1);
     self->text_selected = g_object_ref (text);
     self->syncing_controls = FALSE;

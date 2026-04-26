@@ -233,14 +233,14 @@ update_color_cb (GtkWidget *button, GParamSpec *pspec, TboToolSelector *tool)
     if (tool->resizing || tool->clicked || tool->selected_frame == NULL)
         return;
 
-    const GdkRGBA *color = gtk_color_dialog_button_get_rgba (GTK_COLOR_DIALOG_BUTTON (button));
+    GdkRGBA color = tbo_color_picker_get_rgba (button);
     tbo_frame_get_color (tool->selected_frame, &current_color);
-    if (gdk_rgba_equal (&current_color, color))
+    if (gdk_rgba_equal (&current_color, &color))
         return;
 
     border = tbo_frame_get_border (tool->selected_frame);
 
-    tbo_frame_set_color (tool->selected_frame, (GdkRGBA *) color);
+    tbo_frame_set_color (tool->selected_frame, &color);
     tbo_undo_stack_insert (tbo->undo_stack,
                            tbo_action_frame_state_new (tool->selected_frame,
                                                        tbo_frame_get_x (tool->selected_frame),
@@ -256,9 +256,9 @@ update_color_cb (GtkWidget *button, GParamSpec *pspec, TboToolSelector *tool)
                                                        tbo_frame_get_width (tool->selected_frame),
                                                        tbo_frame_get_height (tool->selected_frame),
                                                        border,
-                                                       color->red,
-                                                       color->green,
-                                                       color->blue));
+                                                       color.red,
+                                                       color.green,
+                                                       color.blue));
     tbo_window_mark_dirty (tbo);
     tbo_toolbar_update (tbo->toolbar);
     tbo_drawing_update (drawing);
@@ -312,7 +312,6 @@ update_tool_area (TboToolSelector *self)
     GtkWidget *hpanel;
     GtkWidget *label;
     GdkRGBA gdk_color = { 0, 0, 0, 1 };
-    GtkColorDialog *color_dialog;
     int frame_x, frame_y, frame_width, frame_height;
 
     tbo_frame_get_bounds (self->selected_frame, &frame_x, &frame_y, &frame_width, &frame_height);
@@ -338,9 +337,7 @@ update_tool_area (TboToolSelector *self)
         label = gtk_label_new (_("Background color: "));
         gtk_label_set_xalign (GTK_LABEL (label), 0.0);
         gtk_label_set_yalign (GTK_LABEL (label), 0.5);
-        color_dialog = gtk_color_dialog_new ();
-        self->color_button = gtk_color_dialog_button_new (color_dialog);
-        gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->color_button), &gdk_color);
+        self->color_button = tbo_color_picker_new (&gdk_color);
 
         tbo_box_pack_start (hpanel, label, TRUE, TRUE, 5);
         tbo_box_pack_start (hpanel, self->color_button, TRUE, TRUE, 5);
@@ -360,7 +357,7 @@ update_tool_area (TboToolSelector *self)
     gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_w), frame_width);
     gtk_spin_button_set_value (GTK_SPIN_BUTTON (self->spin_h), frame_height);
     gtk_check_button_set_active (GTK_CHECK_BUTTON (self->border_button), tbo_frame_get_border (self->selected_frame));
-    gtk_color_dialog_button_set_rgba (GTK_COLOR_DIALOG_BUTTON (self->color_button), &gdk_color);
+    tbo_color_picker_set_rgba (self->color_button, &gdk_color);
 }
 
 static void

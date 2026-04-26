@@ -6,13 +6,9 @@ Build-Depends:
  debhelper-compat (= 13),
  meson,
  pkgconf,
- gettext,
  libgtk-4-dev,
  libcairo2-dev,
- librsvg2-dev,
- desktop-file-utils,
- xvfb,
- xauth
+ librsvg2-dev
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
 Homepage: https://github.com/j4imefoo/TBO

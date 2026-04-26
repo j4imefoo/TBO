@@ -27,6 +27,7 @@
 #include "doodle-treeview.h"
 #include "dnd.h"
 #include "tbo-files.h"
+#include "tbo-ui-utils.h"
 #include "tbo-widget.h"
 
 typedef struct
@@ -422,7 +423,7 @@ build_image_grid_internal (TboWindow *tbo, gchar *dir, const gchar *query, gbool
         thumb_height = gdk_pixbuf_get_height (pixbuf);
         image = tbo_picture_new_for_pixbuf (pixbuf);
         gtk_picture_set_can_shrink (GTK_PICTURE (image), TRUE);
-        gtk_picture_set_content_fit (GTK_PICTURE (image), GTK_CONTENT_FIT_CONTAIN);
+        tbo_picture_set_contain (GTK_PICTURE (image));
         gtk_widget_set_size_request (image, thumb_width, thumb_height);
 
         button = gtk_button_new ();
@@ -695,8 +696,16 @@ doodle_setup_tree (TboWindow *tbo, gboolean bubble_mode)
     gtk_widget_set_margin_end (search_entry, 4);
     gtk_widget_set_margin_top (search_entry, 4);
     gtk_widget_set_margin_bottom (search_entry, 4);
+#if GTK_CHECK_VERSION(4, 10, 0)
     gtk_search_entry_set_placeholder_text (GTK_SEARCH_ENTRY (search_entry),
                                            bubble_mode ? _("Search Bubbles") : _("Search Assets"));
+#else
+    if (g_object_class_find_property (G_OBJECT_GET_CLASS (search_entry), "placeholder-text") != NULL)
+        g_object_set (search_entry,
+                      "placeholder-text",
+                      bubble_mode ? _("Search Bubbles") : _("Search Assets"),
+                      NULL);
+#endif
 
     content = gtk_box_new (GTK_ORIENTATION_VERTICAL, 5);
     tbo_widget_add_child (root, search_entry);
